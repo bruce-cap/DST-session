@@ -1,0 +1,17 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.deepseek/
+.deepseek-session-manager/
+sessions/
+*.log
+*.tmp
+.DS_Store
+./*.ps1
+./*.md
