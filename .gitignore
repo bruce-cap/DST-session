@@ -13,5 +13,5 @@ sessions/
 *.log
 *.tmp
 .DS_Store
-./*.ps1
-./*.md
+/deepseek-session.ps1
+/deepseek-session-manager-prd.md
