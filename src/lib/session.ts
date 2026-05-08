@@ -112,7 +112,7 @@ export function getGroupKey(
   }
 
   const key = session.workspace || "(no workspace)";
-  return { key, label: key };
+  return { key, label: workspaceLeafName(key) };
 }
 
 export function formatDateTime(value: string | null): string {
@@ -211,6 +211,16 @@ function fileStem(path: string): string {
   const normalized = path.replaceAll("\\", "/");
   const fileName = normalized.split("/").pop() ?? path;
   return fileName.replace(/\.json$/i, "");
+}
+
+function workspaceLeafName(path: string): string {
+  if (path === "(no workspace)") {
+    return path;
+  }
+
+  const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
+  const leaf = normalized.split("/").pop();
+  return leaf || path;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

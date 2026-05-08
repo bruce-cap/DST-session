@@ -94,10 +94,24 @@ describe("session helpers", () => {
 
     expect(groups).toHaveLength(2);
     expect(groups[0].key).toBe("C:\\repo-a");
+    expect(groups[0].label).toBe("repo-a");
     expect(groups[0].sessions.map((session) => session.id)).toEqual([
       "c22e6c3d-86bf-4f20-a806-749bd57fed1d",
       "b22e6c3d-86bf-4f20-a806-749bd57fed1d"
     ]);
+  });
+
+  it("uses the last workspace directory as the visible group label", () => {
+    expect(
+      getGroupKey(
+        sampleSession({ workspace: "C:\\Users\\Example\\Desktop\\Free-BAI-main" }),
+        "workspace",
+        new Set()
+      )
+    ).toEqual({
+      key: "C:\\Users\\Example\\Desktop\\Free-BAI-main",
+      label: "Free-BAI-main"
+    });
   });
 
   it("formats date and token counts for compact display", () => {

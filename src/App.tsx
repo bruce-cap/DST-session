@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import logoUrl from "./assets/logo.svg";
 import { buildResumeCommand } from "./lib/commands";
 import {
   compareUpdatedDesc,
@@ -24,6 +25,8 @@ const defaultState: AppState = {
   launchMode: "new_terminal"
 };
 
+type ThemeMode = "light" | "dark";
+
 export default function App() {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [appState, setAppState] = useState<AppState>(defaultState);
@@ -34,10 +37,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [theme, setTheme] = useState<ThemeMode>(() => initialTheme());
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     void loadAll();
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("deepseek-session-manager-theme", theme);
+  }, [theme]);
 
   const favoriteSet = new Set(appState.favorites);
   const filtered = sessions
@@ -109,37 +119,74 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <section className="hero">
-        <div>
-          <p className="eyebrow">Local DeepSeek TUI sessions</p>
-          <h1>会话管理器</h1>
-          <p className="hero-copy">
-            只读扫描本机 session JSON，按项目和上下文找回对话，并用完整 ID 快速恢复。
-          </p>
+      <header className="app-bar">
+        <div className="brand">
+          <img src={logoUrl} alt="DeepSeek Session Manager logo" />
+          <div>
+            <strong>DeepSeek Session Manager</strong>
+            <span>本地会话浏览与恢复</span>
+          </div>
         </div>
-        <div className={`status-pill ${status?.available ? "ok" : "bad"}`}>
-          <span>{status?.available ? "deepseek-tui.cmd 可用" : "deepseek-tui.cmd 不可用"}</span>
-          <small>{status?.message ?? "检测中"}</small>
-        </div>
-      </section>
 
-      <section className="toolbar">
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="搜索标题、消息、workspace、模型或 ID"
-        />
-        <select value={groupBy} onChange={(event) => setGroupBy(event.target.value as GroupBy)}>
-          {GROUP_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <button type="button" onClick={() => void loadAll()}>
-          刷新
-        </button>
-      </section>
+        <div className="top-search">
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜索标题、消息、workspace、模型或 ID"
+          />
+          <select value={groupBy} onChange={(event) => setGroupBy(event.target.value as GroupBy)}>
+            {GROUP_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="top-actions">
+          <button type="button" className="primary" onClick={() => selected && void resume(selected)} disabled={!selected || !status?.available || Boolean(selected.invalidReason)}>
+            启动
+          </button>
+          <button type="button" onClick={() => selected && void copyCommand(selected)} disabled={!selected}>
+            复制命令
+          </button>
+          <button type="button" onClick={() => selected && void openFolder(selected)} disabled={!selected}>
+            打开目录
+          </button>
+          <button type="button" onClick={() => void loadAll()}>
+            刷新
+          </button>
+          <div className="settings-wrap">
+            <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}>
+              设置
+            </button>
+            {settingsOpen && (
+              <div className="settings-menu">
+                <div className="settings-title">设置</div>
+                <label className="settings-row">
+                  <span>暗色主题</span>
+                  <button
+                    type="button"
+                    className={`switch ${theme === "dark" ? "on" : ""}`}
+                    onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+                    aria-pressed={theme === "dark"}
+                  >
+                    <i />
+                  </button>
+                </label>
+                <div className="settings-note">
+                  <span>启动方式</span>
+                  <b>{appState.launchMode === "new_terminal" ? "新系统终端" : "内嵌终端"}</b>
+                </div>
+                <div className={`settings-status ${status?.available ? "ok" : "bad"}`}>
+                  {status?.available ? "deepseek-tui.cmd 可用" : "deepseek-tui.cmd 不可用"}
+                </div>
+                <p>V0.1 只读 DeepSeek 原始 session JSON。</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
 
       {(error || notice || invalidCount > 0) && (
         <section className="message-stack">
@@ -154,7 +201,7 @@ export default function App() {
       <section className="workspace">
         <aside className="group-panel">
           <div className="panel-title">
-            <span>分组</span>
+            <span>工作区</span>
             <strong>{filtered.length}</strong>
           </div>
           {groups.map((group) => (
@@ -208,12 +255,8 @@ export default function App() {
             <SessionDetails
               session={selected}
               favorite={favoriteSet.has(selected.id)}
-              deepseekAvailable={status?.available ?? false}
               launchMode={appState.launchMode}
               onToggleFavorite={() => void toggleFavorite(selected)}
-              onCopy={() => void copyCommand(selected)}
-              onOpenFolder={() => void openFolder(selected)}
-              onResume={() => void resume(selected)}
             />
           ) : (
             <div className="empty">选择一个会话查看详情。</div>
@@ -227,12 +270,8 @@ export default function App() {
 function SessionDetails(props: {
   session: SessionRecord;
   favorite: boolean;
-  deepseekAvailable: boolean;
   launchMode: AppState["launchMode"];
   onToggleFavorite: () => void;
-  onCopy: () => void;
-  onOpenFolder: () => void;
-  onResume: () => void;
 }) {
   const { session } = props;
   const command = resumeCommand(session);
@@ -281,18 +320,6 @@ function SessionDetails(props: {
         <code>{command}</code>
       </div>
 
-      <div className="actions">
-        <button type="button" onClick={props.onResume} disabled={!props.deepseekAvailable || Boolean(session.invalidReason)}>
-          继续会话
-        </button>
-        <button type="button" className="secondary" onClick={props.onCopy}>
-          复制命令
-        </button>
-        <button type="button" className="secondary" onClick={props.onOpenFolder}>
-          打开目录
-        </button>
-      </div>
-
       <p className="hint">
         启动方式：{props.launchMode === "new_terminal" ? "新系统终端" : "内嵌终端"}。V0.1 不修改 DeepSeek 原始
         session JSON。
@@ -311,4 +338,12 @@ function toMessage(value: unknown): string {
     return value.message;
   }
   return String(value);
+}
+
+function initialTheme(): ThemeMode {
+  const saved = localStorage.getItem("deepseek-session-manager-theme");
+  if (saved === "light" || saved === "dark") {
+    return saved;
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
