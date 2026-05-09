@@ -4,12 +4,15 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEEPSEEK_TUI_COMMAND: &str = "deepseek-tui.cmd";
+const CLAUDE_CODE_COMMAND: &str = "claude.cmd";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionRecord {
+    source: String,
     id: String,
     short_id: String,
     title: String,
@@ -41,13 +44,19 @@ struct DeepseekStatus {
 }
 
 #[tauri::command]
-fn list_sessions(sessions_dir: Option<String>) -> Result<Vec<SessionRecord>, String> {
-    let dir = sessions_dir
-        .map(PathBuf::from)
-        .unwrap_or_else(default_sessions_dir);
+fn list_sessions(source: Option<String>, sessions_dir: Option<String>) -> Result<Vec<SessionRecord>, String> {
+    match source.as_deref().unwrap_or("deepseek") {
+        "claude" => list_claude_sessions(sessions_dir.map(PathBuf::from).unwrap_or_else(default_claude_projects_dir)),
+        _ => list_deepseek_sessions(sessions_dir.map(PathBuf::from).unwrap_or_else(default_sessions_dir)),
+    }
+}
 
+fn list_deepseek_sessions(dir: PathBuf) -> Result<Vec<SessionRecord>, String> {
     if !dir.exists() {
-        return Ok(Vec::new());
+        return Err(format!(
+            "DeepSeek sessions 目录不存在：{}。请确认已安装 DeepSeek TUI，或在设置中指定自定义目录。",
+            dir.display()
+        ));
     }
 
     let mut records = Vec::new();
@@ -58,7 +67,7 @@ fn list_sessions(sessions_dir: Option<String>) -> Result<Vec<SessionRecord>, Str
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                records.push(invalid_record("", "", format!("读取目录项失败: {error}")));
+                records.push(invalid_record("deepseek", "", "", format!("读取目录项失败: {error}")));
                 continue;
             }
         };
@@ -71,10 +80,79 @@ fn list_sessions(sessions_dir: Option<String>) -> Result<Vec<SessionRecord>, Str
         match parse_session_file(&path) {
             Ok(record) => records.push(record),
             Err(error) => records.push(invalid_record(
+                "deepseek",
                 &file_stem(&path),
                 &path.to_string_lossy(),
                 error,
             )),
+        }
+    }
+
+    records.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    Ok(records)
+}
+
+fn list_claude_sessions(dir: PathBuf) -> Result<Vec<SessionRecord>, String> {
+    if !dir.exists() {
+        return Err(format!(
+            "Claude Code projects 目录不存在：{}。请确认已安装 Claude Code，或在设置中指定自定义目录。",
+            dir.display()
+        ));
+    }
+
+    let mut records = Vec::new();
+    for project in fs::read_dir(&dir)
+        .map_err(|error| format!("无法读取 Claude projects 目录 {}: {error}", dir.display()))?
+    {
+        let project = match project {
+            Ok(project) => project,
+            Err(error) => {
+                records.push(invalid_record("claude", "", "", format!("读取 Claude 项目目录失败: {error}")));
+                continue;
+            }
+        };
+
+        let project_path = project.path();
+        if !project_path.is_dir() {
+            continue;
+        }
+
+        let files = match fs::read_dir(&project_path) {
+            Ok(files) => files,
+            Err(error) => {
+                records.push(invalid_record(
+                    "claude",
+                    &file_stem(&project_path),
+                    &project_path.to_string_lossy(),
+                    format!("读取 Claude 会话目录失败: {error}"),
+                ));
+                continue;
+            }
+        };
+
+        for file in files {
+            let file = match file {
+                Ok(file) => file,
+                Err(error) => {
+                    records.push(invalid_record("claude", "", "", format!("读取 Claude 会话文件失败: {error}")));
+                    continue;
+                }
+            };
+
+            let path = file.path();
+            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+                continue;
+            }
+
+            match parse_claude_session_file(&path) {
+                Ok(record) => records.push(record),
+                Err(error) => records.push(invalid_record(
+                    "claude",
+                    &file_stem(&path),
+                    &path.to_string_lossy(),
+                    error,
+                )),
+            }
         }
     }
 
@@ -104,8 +182,13 @@ fn set_favorite(session_id: String, favorite: bool) -> Result<AppState, String> 
 }
 
 #[tauri::command]
-fn check_deepseek() -> DeepseekStatus {
-    match Command::new(DEEPSEEK_TUI_COMMAND).arg("--version").output() {
+fn check_agent(source: Option<String>) -> DeepseekStatus {
+    let command = match source.as_deref().unwrap_or("deepseek") {
+        "claude" => CLAUDE_CODE_COMMAND,
+        _ => DEEPSEEK_TUI_COMMAND,
+    };
+
+    match Command::new(command).arg("--version").output() {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -114,7 +197,7 @@ fn check_deepseek() -> DeepseekStatus {
                 available: true,
                 version: version.clone(),
                 message: if version.is_empty() {
-                    format!("{DEEPSEEK_TUI_COMMAND} 可用")
+                    format!("{command} 可用")
                 } else {
                     version
                 },
@@ -123,12 +206,12 @@ fn check_deepseek() -> DeepseekStatus {
         Ok(output) => DeepseekStatus {
             available: false,
             version: String::new(),
-            message: format!("{DEEPSEEK_TUI_COMMAND} --version 退出码异常: {}", output.status),
+            message: format!("{command} --version 退出码异常: {}", output.status),
         },
         Err(error) => DeepseekStatus {
             available: false,
             version: String::new(),
-            message: format!("未找到 {DEEPSEEK_TUI_COMMAND} 命令: {error}"),
+            message: format!("未找到 {command} 命令: {error}"),
         },
     }
 }
@@ -154,6 +237,7 @@ fn open_session_folder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn resume_session(
+    source: Option<String>,
     session_id: String,
     workspace: Option<String>,
     launch_mode: Option<String>,
@@ -164,7 +248,10 @@ fn resume_session(
     }
 
     let cwd = workspace_dir(workspace);
-    launch_deepseek_resume(&session_id, &cwd)
+    match source.as_deref().unwrap_or("deepseek") {
+        "claude" => launch_resume(CLAUDE_CODE_COMMAND, "--resume", &session_id, &cwd),
+        _ => launch_resume(DEEPSEEK_TUI_COMMAND, "resume", &session_id, &cwd),
+    }
 }
 
 fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
@@ -186,6 +273,7 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
         });
 
     Ok(SessionRecord {
+        source: "deepseek".to_string(),
         short_id: id.chars().take(8).collect(),
         id,
         title,
@@ -203,7 +291,104 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
     })
 }
 
-fn invalid_record(id: &str, path: &str, reason: String) -> SessionRecord {
+fn parse_claude_session_file(path: &Path) -> Result<SessionRecord, String> {
+    let content = fs::read_to_string(path)
+        .map_err(|error| format!("读取 Claude session 文件失败 {}: {error}", path.display()))?;
+    let mut id = file_stem(path);
+    let mut title = String::new();
+    let mut preview = String::new();
+    let mut created_at: Option<String> = None;
+    let mut updated_at: Option<String> = None;
+    let mut message_count = 0_u64;
+    let mut total_tokens = 0_u64;
+    let mut model = String::new();
+    let mut workspace = String::new();
+    let mut mode = String::new();
+
+    for line in content.lines().filter(|line| !line.trim().is_empty()) {
+        let Ok(json) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+
+        if let Some(session_id) = string_at(&json, "sessionId") {
+            id = session_id;
+        }
+        if let Some(timestamp) = string_at(&json, "timestamp") {
+            if created_at.is_none() {
+                created_at = Some(timestamp.clone());
+            }
+            updated_at = Some(timestamp);
+        }
+        if workspace.is_empty() {
+            workspace = string_at(&json, "cwd").unwrap_or_default();
+        }
+        if mode.is_empty() {
+            mode = string_at(&json, "permissionMode").unwrap_or_default();
+        }
+
+        match string_at(&json, "type").as_deref() {
+            Some("user") => {
+                let text = claude_message_text(json.get("message"));
+                if !text.is_empty() {
+                    message_count += 1;
+                    if preview.is_empty() {
+                        preview = text.clone();
+                    }
+                    if title.is_empty() {
+                        title = text;
+                    }
+                }
+            }
+            Some("assistant") => {
+                message_count += 1;
+                if let Some(message) = json.get("message") {
+                    if model.is_empty() {
+                        model = string_at(message, "model").unwrap_or_default();
+                    }
+                    total_tokens += claude_usage_tokens(message.get("usage"));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if title.is_empty() {
+        title = "(untitled)".to_string();
+    }
+    if updated_at.is_none() {
+        updated_at = fs::metadata(path)
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .map(system_time_to_rfc3339);
+    }
+    if workspace.is_empty() {
+        workspace = path
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .map(decode_claude_project_dir)
+            .unwrap_or_default();
+    }
+
+    Ok(SessionRecord {
+        source: "claude".to_string(),
+        short_id: id.chars().take(8).collect(),
+        id,
+        title,
+        preview,
+        created_at,
+        updated_at,
+        message_count,
+        total_tokens,
+        model,
+        workspace,
+        mode,
+        path: path.to_string_lossy().to_string(),
+        invalid_reason: None,
+    })
+}
+
+fn invalid_record(source: &str, id: &str, path: &str, reason: String) -> SessionRecord {
     let id = if id.is_empty() {
         "(invalid)".to_string()
     } else {
@@ -211,6 +396,7 @@ fn invalid_record(id: &str, path: &str, reason: String) -> SessionRecord {
     };
 
     SessionRecord {
+        source: source.to_string(),
         short_id: id.chars().take(8).collect(),
         id: id.clone(),
         title: format!("无法解析: {id}"),
@@ -307,6 +493,10 @@ fn default_sessions_dir() -> PathBuf {
     home_dir().join(".deepseek").join("sessions")
 }
 
+fn default_claude_projects_dir() -> PathBuf {
+    home_dir().join(".claude").join("projects")
+}
+
 fn app_state_path() -> PathBuf {
     home_dir()
         .join(".deepseek-session-manager")
@@ -330,40 +520,35 @@ fn workspace_dir(workspace: Option<String>) -> PathBuf {
     }
 }
 
-fn launch_deepseek_resume(session_id: &str, cwd: &Path) -> Result<(), String> {
+fn launch_resume(command: &str, resume_arg: &str, session_id: &str, cwd: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let cwd_text = cwd.to_string_lossy().to_string();
-        let resume_command = format!("{DEEPSEEK_TUI_COMMAND} resume '{}'", powershell_escape(session_id));
 
         match Command::new("wt")
-            .args(["-d", &cwd_text, "powershell", "-NoExit", "-Command", &resume_command])
+            .args(["-d", &cwd_text, "cmd", "/K", command, resume_arg, session_id])
             .spawn()
         {
             Ok(_) => return Ok(()),
             Err(_) => {
-                let fallback = format!(
-                    "Set-Location -LiteralPath '{}'; {DEEPSEEK_TUI_COMMAND} resume '{}'",
-                    powershell_escape(&cwd_text),
-                    powershell_escape(session_id)
-                );
                 Command::new("cmd")
-                    .args(["/C", "start", "DeepSeek", "powershell", "-NoExit", "-Command", &fallback])
+                    .args(["/C", "start", command, "cmd", "/K", command, resume_arg, session_id])
+                    .current_dir(cwd)
                     .spawn()
                     .map(|_| ())
-                    .map_err(|error| format!("启动 PowerShell 失败: {error}"))
+                    .map_err(|error| format!("启动 {command} 失败: {error}"))
             }
         }
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        Command::new(DEEPSEEK_TUI_COMMAND)
-            .args(["resume", session_id])
+        Command::new(command)
+            .args([resume_arg, session_id])
             .current_dir(cwd)
             .spawn()
             .map(|_| ())
-            .map_err(|error| format!("启动 {DEEPSEEK_TUI_COMMAND} 失败: {error}"))
+            .map_err(|error| format!("启动 {command} 失败: {error}"))
     }
 }
 
@@ -386,8 +571,82 @@ fn file_stem(path: &Path) -> String {
         .to_string()
 }
 
-fn powershell_escape(value: &str) -> String {
-    value.replace('\'', "''")
+fn claude_message_text(message: Option<&Value>) -> String {
+    let Some(message) = message else {
+        return String::new();
+    };
+    content_to_text(message.get("content"))
+}
+
+fn claude_usage_tokens(usage: Option<&Value>) -> u64 {
+    let Some(usage) = usage else {
+        return 0;
+    };
+
+    number_at(usage, "input_tokens").unwrap_or(0)
+        + number_at(usage, "output_tokens").unwrap_or(0)
+        + number_at(usage, "cache_creation_input_tokens").unwrap_or(0)
+        + number_at(usage, "cache_read_input_tokens").unwrap_or(0)
+}
+
+fn decode_claude_project_dir(name: &str) -> String {
+    // Claude Code encodes project paths by replacing separators with '-'.
+    // Absolute paths start with a leading '-' marker.
+    // Windows: "-C--Users-Cap-Desktop-proj" -> "C:\Users\Cap\Desktop\proj"
+    // POSIX:   "-home-cap-proj"             -> "/home/cap/proj"
+    // Note: original paths containing literal '-' are ambiguous and cannot be
+    // perfectly recovered; this decoder still prefers the `cwd` field from
+    // the JSONL content when available.
+    let trimmed = name.strip_prefix('-').unwrap_or(name);
+
+    if let Some((drive, rest)) = trimmed.split_once("--") {
+        if drive.len() == 1 && drive.chars().next().unwrap().is_ascii_alphabetic() {
+            return format!(
+                "{}:\\{}",
+                drive.to_ascii_uppercase(),
+                rest.replace('-', "\\")
+            );
+        }
+    }
+
+    if name.starts_with('-') {
+        format!("/{}", trimmed.replace('-', "/"))
+    } else {
+        name.replace('-', "/")
+    }
+}
+
+fn system_time_to_rfc3339(value: SystemTime) -> String {
+    let duration = value.duration_since(UNIX_EPOCH).unwrap_or_default();
+    let total_secs = duration.as_secs() as i64;
+
+    let days = total_secs.div_euclid(86_400);
+    let secs_of_day = total_secs.rem_euclid(86_400);
+    let hour = (secs_of_day / 3600) as u32;
+    let minute = ((secs_of_day % 3600) / 60) as u32;
+    let second = (secs_of_day % 60) as u32;
+
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        year, month, day, hour, minute, second
+    )
+}
+
+/// Convert days since 1970-01-01 to (year, month, day). Algorithm from
+/// Howard Hinnant's date library, valid for the full proleptic Gregorian range.
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32; // [1, 12]
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as i32, m, d)
 }
 
 fn main() {
@@ -396,7 +655,7 @@ fn main() {
             list_sessions,
             get_app_state,
             set_favorite,
-            check_deepseek,
+            check_agent,
             open_session_folder,
             resume_session
         ])

@@ -1,6 +1,8 @@
 export type GroupBy = "workspace" | "date" | "model" | "mode" | "favorite" | "none";
+export type SessionSource = "deepseek" | "claude";
 
 export interface SessionRecord {
+  source: SessionSource;
   id: string;
   shortId: string;
   title: string;

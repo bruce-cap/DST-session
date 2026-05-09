@@ -126,6 +126,7 @@ describe("session helpers", () => {
 
 function sampleSession(overrides: Partial<SessionRecord> = {}): SessionRecord {
   return {
+    source: "deepseek",
     id: "000a7d86-d0d2-48f0-a8b4-f14dd082b9b4",
     shortId: "000a7d86",
     title: "Untitled",

@@ -25,6 +25,7 @@ export function normalizeSession(raw: RawSession, path: string): SessionRecord {
   const title = asString(metadata.title) || preview || "(untitled)";
 
   return {
+    source: "deepseek",
     id,
     shortId: id.slice(0, 8),
     title,
@@ -87,7 +88,7 @@ export function getGroupKey(
   favorites: Set<string>
 ): { key: string; label: string } {
   if (groupBy === "favorite") {
-    return favorites.has(session.id)
+    return favorites.has(`${session.source}:${session.id}`) || favorites.has(session.id)
       ? { key: "favorites", label: "收藏" }
       : { key: "others", label: "未收藏" };
   }

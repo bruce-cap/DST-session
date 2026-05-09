@@ -1,6 +1,6 @@
 # DeepSeek Session Manager
 
-A lightweight local desktop app for browsing and resuming DeepSeek TUI sessions.
+A lightweight local desktop app for browsing and resuming DeepSeek TUI and Claude Code sessions.
 
 DeepSeek TUI can resume a conversation with a command such as:
 
@@ -8,27 +8,30 @@ DeepSeek TUI can resume a conversation with a command such as:
 deepseek-tui.cmd resume <session-id>
 ```
 
-This app gives those local sessions a graphical manager: search, group, preview, favorite, open the JSON folder, and resume a session from the UI.
+This app gives those local sessions a graphical manager: switch between DeepSeek TUI and Claude Code, search, group, preview, favorite, open the session file folder, and resume a session from the UI.
 
 ## Features
 
+- Switch between DeepSeek TUI and Claude Code session sources from the top bar.
 - Read local DeepSeek TUI session JSON files from the default sessions directory.
+- Read local Claude Code JSONL session files from the default projects directory.
 - Group sessions by workspace, date, model, mode, favorites, or show all sessions.
 - Search by title, first user message, workspace, model, mode, or session ID.
 - Preview session metadata and the first user-message summary.
 - Favorite sessions without modifying the original DeepSeek session JSON.
 - Copy the resume command.
 - Open the session JSON folder.
-- Launch a new terminal window and run `deepseek-tui.cmd resume <session-id>`.
+- Launch a new terminal window and run `deepseek-tui.cmd resume <session-id>` or `claude --resume <session-id>`.
 
 ## Safety Model
 
-Version `0.1.0` treats DeepSeek TUI session files as read-only.
+Version `0.1.0` treats DeepSeek TUI and Claude Code session files as read-only.
 
 The app reads:
 
 ```text
 %USERPROFILE%\.deepseek\sessions
+%USERPROFILE%\.claude\projects
 ```
 
 The app writes only its own state file for favorites and launch settings:
@@ -37,7 +40,7 @@ The app writes only its own state file for favorites and launch settings:
 %USERPROFILE%\.deepseek-session-manager\state.json
 ```
 
-It does not upload session content, call an AI model for summaries, or modify the original DeepSeek TUI JSON files.
+It does not upload session content, call an AI model for summaries, or modify the original DeepSeek TUI or Claude Code session files.
 
 ## Requirements
 
@@ -46,11 +49,13 @@ It does not upload session content, call an AI model for summaries, or modify th
 - pnpm
 - Rust toolchain
 - DeepSeek TUI installed and available as `deepseek-tui.cmd`
+- Claude Code installed and available as `claude`
 
 Check the DeepSeek TUI command:
 
 ```powershell
 deepseek-tui.cmd --version
+claude --version
 ```
 
 ## Development
