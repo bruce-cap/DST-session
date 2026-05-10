@@ -1,5 +1,6 @@
 export type GroupBy = "workspace" | "date" | "model" | "mode" | "favorite" | "none";
 export type SessionSource = "deepseek" | "claude";
+export type DeepseekLauncher = "cmd" | "ps1";
 
 export interface SessionRecord {
   source: SessionSource;
@@ -27,6 +28,7 @@ export interface SessionGroup {
 export interface AppState {
   favorites: string[];
   launchMode: "new_terminal" | "embedded";
+  deepseekLauncher: DeepseekLauncher;
 }
 
 export interface DeepseekStatus {

@@ -5,7 +5,7 @@
 DeepSeek TUI 可以通过下面的命令恢复历史会话：
 
 ```powershell
-deepseek-tui.cmd resume <session-id>
+deepseek.cmd resume <session-id>
 ```
 
 这个项目在此基础上提供了一个图形化界面，方便你在 DeepSeek TUI 和 Claude Code 两种会话来源之间切换，搜索、分组、预览、收藏本地会话，打开对应会话文件目录，并从界面中快速继续某个会话。
@@ -21,7 +21,8 @@ deepseek-tui.cmd resume <session-id>
 - 支持收藏会话，且不会修改 DeepSeek 原始 session JSON。
 - 支持复制恢复命令。
 - 支持打开 session JSON 所在目录。
-- 支持打开新的系统终端并执行 `deepseek-tui.cmd resume <session-id>` 或 `claude --resume <session-id>`。
+- 支持打开新的系统终端并执行 `deepseek.cmd resume <session-id>` 或 `claude --resume <session-id>`。
+- 支持在设置中切换 DeepSeek 启动脚本：`deepseek.cmd` 或 `deepseek.ps1`。
 
 ## 安全模型
 
@@ -48,13 +49,14 @@ deepseek-tui.cmd resume <session-id>
 - Node.js 22+
 - pnpm
 - Rust 工具链
-- 已安装 DeepSeek TUI，并且命令行中可以使用 `deepseek-tui.cmd`
+- 已安装 DeepSeek TUI，并且命令行中可以使用 `deepseek.cmd`
 - 已安装 Claude Code，并且命令行中可以使用 `claude`
 
 检查 DeepSeek TUI 命令是否可用：
 
 ```powershell
-deepseek-tui.cmd --version
+deepseek.cmd --version
+deepseek.ps1 --version
 claude --version
 ```
 

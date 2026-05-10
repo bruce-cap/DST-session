@@ -448,10 +448,31 @@ select:focus-visible,
   box-shadow: var(--shadow-md);
 }
 
+.tooltip-target[data-tooltip-align="end"]::after {
+  left: auto;
+  right: 0;
+  transform: translate(0, -4px);
+}
+
+.tooltip-target[data-tooltip-align="start"]::after {
+  left: 0;
+  transform: translate(0, -4px);
+}
+
 .tooltip-target:hover::after,
 .tooltip-target:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+.tooltip-target[data-tooltip-align="end"]:hover::after,
+.tooltip-target[data-tooltip-align="end"]:focus-visible::after {
+  transform: translate(0, 0);
+}
+
+.tooltip-target[data-tooltip-align="start"]:hover::after,
+.tooltip-target[data-tooltip-align="start"]:focus-visible::after {
+  transform: translate(0, 0);
 }
 
 /* ===== Settings popover ===== */
@@ -514,6 +535,35 @@ select:focus-visible,
   padding: 6px 2px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.locale-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.locale-toggle button {
+  min-width: 34px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.locale-toggle button:hover {
+  color: var(--ink);
+}
+
+.locale-toggle button.active {
+  background: var(--surface);
+  color: var(--accent-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .settings-note b {

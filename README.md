@@ -5,7 +5,7 @@ A lightweight local desktop app for browsing and resuming DeepSeek TUI and Claud
 DeepSeek TUI can resume a conversation with a command such as:
 
 ```powershell
-deepseek-tui.cmd resume <session-id>
+deepseek.cmd resume <session-id>
 ```
 
 This app gives those local sessions a graphical manager: switch between DeepSeek TUI and Claude Code, search, group, preview, favorite, open the session file folder, and resume a session from the UI.
@@ -21,7 +21,8 @@ This app gives those local sessions a graphical manager: switch between DeepSeek
 - Favorite sessions without modifying the original DeepSeek session JSON.
 - Copy the resume command.
 - Open the session JSON folder.
-- Launch a new terminal window and run `deepseek-tui.cmd resume <session-id>` or `claude --resume <session-id>`.
+- Launch a new terminal window and run `deepseek.cmd resume <session-id>` or `claude --resume <session-id>`.
+- Switch the DeepSeek launcher between `deepseek.cmd` and `deepseek.ps1` in settings.
 
 ## Safety Model
 
@@ -48,13 +49,14 @@ It does not upload session content, call an AI model for summaries, or modify th
 - Node.js 22+
 - pnpm
 - Rust toolchain
-- DeepSeek TUI installed and available as `deepseek-tui.cmd`
+- DeepSeek TUI installed and available as `deepseek.cmd`
 - Claude Code installed and available as `claude`
 
 Check the DeepSeek TUI command:
 
 ```powershell
-deepseek-tui.cmd --version
+deepseek.cmd --version
+deepseek.ps1 --version
 claude --version
 ```
 

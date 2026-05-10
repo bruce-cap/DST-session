@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEEPSEEK_TUI_COMMAND: &str = "deepseek-tui.cmd";
+const DEEPSEEK_CMD_COMMAND: &str = "deepseek.cmd";
+const DEEPSEEK_PS1_COMMAND: &str = "deepseek.ps1";
 const CLAUDE_CODE_COMMAND: &str = "claude.cmd";
 
 #[derive(Debug, Serialize)]
@@ -33,6 +34,8 @@ struct SessionRecord {
 struct AppState {
     favorites: Vec<String>,
     launch_mode: String,
+    #[serde(default = "default_deepseek_launcher")]
+    deepseek_launcher: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -44,10 +47,21 @@ struct DeepseekStatus {
 }
 
 #[tauri::command]
-fn list_sessions(source: Option<String>, sessions_dir: Option<String>) -> Result<Vec<SessionRecord>, String> {
+fn list_sessions(
+    source: Option<String>,
+    sessions_dir: Option<String>,
+) -> Result<Vec<SessionRecord>, String> {
     match source.as_deref().unwrap_or("deepseek") {
-        "claude" => list_claude_sessions(sessions_dir.map(PathBuf::from).unwrap_or_else(default_claude_projects_dir)),
-        _ => list_deepseek_sessions(sessions_dir.map(PathBuf::from).unwrap_or_else(default_sessions_dir)),
+        "claude" => list_claude_sessions(
+            sessions_dir
+                .map(PathBuf::from)
+                .unwrap_or_else(default_claude_projects_dir),
+        ),
+        _ => list_deepseek_sessions(
+            sessions_dir
+                .map(PathBuf::from)
+                .unwrap_or_else(default_sessions_dir),
+        ),
     }
 }
 
@@ -67,7 +81,12 @@ fn list_deepseek_sessions(dir: PathBuf) -> Result<Vec<SessionRecord>, String> {
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                records.push(invalid_record("deepseek", "", "", format!("读取目录项失败: {error}")));
+                records.push(invalid_record(
+                    "deepseek",
+                    "",
+                    "",
+                    format!("读取目录项失败: {error}"),
+                ));
                 continue;
             }
         };
@@ -107,7 +126,12 @@ fn list_claude_sessions(dir: PathBuf) -> Result<Vec<SessionRecord>, String> {
         let project = match project {
             Ok(project) => project,
             Err(error) => {
-                records.push(invalid_record("claude", "", "", format!("读取 Claude 项目目录失败: {error}")));
+                records.push(invalid_record(
+                    "claude",
+                    "",
+                    "",
+                    format!("读取 Claude 项目目录失败: {error}"),
+                ));
                 continue;
             }
         };
@@ -134,7 +158,12 @@ fn list_claude_sessions(dir: PathBuf) -> Result<Vec<SessionRecord>, String> {
             let file = match file {
                 Ok(file) => file,
                 Err(error) => {
-                    records.push(invalid_record("claude", "", "", format!("读取 Claude 会话文件失败: {error}")));
+                    records.push(invalid_record(
+                        "claude",
+                        "",
+                        "",
+                        format!("读取 Claude 会话文件失败: {error}"),
+                    ));
                     continue;
                 }
             };
@@ -182,13 +211,22 @@ fn set_favorite(session_id: String, favorite: bool) -> Result<AppState, String> 
 }
 
 #[tauri::command]
-fn check_agent(source: Option<String>) -> DeepseekStatus {
+fn set_deepseek_launcher(launcher: String) -> Result<AppState, String> {
+    let launcher = normalize_deepseek_launcher(Some(launcher));
+    let mut state = read_app_state()?;
+    state.deepseek_launcher = launcher;
+    write_app_state(&state)?;
+    Ok(state)
+}
+
+#[tauri::command]
+fn check_agent(source: Option<String>, deepseek_launcher: Option<String>) -> DeepseekStatus {
     let command = match source.as_deref().unwrap_or("deepseek") {
         "claude" => CLAUDE_CODE_COMMAND,
-        _ => DEEPSEEK_TUI_COMMAND,
+        _ => deepseek_command(&normalize_deepseek_launcher(deepseek_launcher)),
     };
 
-    match Command::new(command).arg("--version").output() {
+    match command_output(command, "--version") {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -241,6 +279,7 @@ fn resume_session(
     session_id: String,
     workspace: Option<String>,
     launch_mode: Option<String>,
+    deepseek_launcher: Option<String>,
 ) -> Result<(), String> {
     let mode = launch_mode.unwrap_or_else(|| "new_terminal".to_string());
     if mode != "new_terminal" {
@@ -250,7 +289,12 @@ fn resume_session(
     let cwd = workspace_dir(workspace);
     match source.as_deref().unwrap_or("deepseek") {
         "claude" => launch_resume(CLAUDE_CODE_COMMAND, "--resume", &session_id, &cwd),
-        _ => launch_resume(DEEPSEEK_TUI_COMMAND, "resume", &session_id, &cwd),
+        _ => launch_resume(
+            deepseek_command(&normalize_deepseek_launcher(deepseek_launcher)),
+            "resume",
+            &session_id,
+            &cwd,
+        ),
     }
 }
 
@@ -280,8 +324,11 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
         preview,
         created_at: string_at(metadata, "created_at"),
         updated_at: string_at(metadata, "updated_at"),
-        message_count: number_at(metadata, "message_count")
-            .unwrap_or_else(|| json.get("messages").and_then(Value::as_array).map_or(0, |m| m.len() as u64)),
+        message_count: number_at(metadata, "message_count").unwrap_or_else(|| {
+            json.get("messages")
+                .and_then(Value::as_array)
+                .map_or(0, |m| m.len() as u64)
+        }),
         total_tokens: number_at(metadata, "total_tokens").unwrap_or(0),
         model: string_at(metadata, "model").unwrap_or_default(),
         workspace: string_at(metadata, "workspace").unwrap_or_default(),
@@ -443,7 +490,9 @@ fn content_to_text(content: Option<&Value>) -> String {
                     if item.get("type").and_then(Value::as_str) == Some("text") {
                         return item.get("text").and_then(Value::as_str).map(str::to_string);
                     }
-                    item.get("content").and_then(Value::as_str).map(str::to_string)
+                    item.get("content")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
                 })
                 .collect::<Vec<_>>()
                 .join(" "),
@@ -476,8 +525,8 @@ fn write_app_state(state: &AppState) -> Result<(), String> {
             .map_err(|error| format!("创建状态目录失败 {}: {error}", parent.display()))?;
     }
 
-    let content = serde_json::to_string_pretty(state)
-        .map_err(|error| format!("序列化状态失败: {error}"))?;
+    let content =
+        serde_json::to_string_pretty(state).map_err(|error| format!("序列化状态失败: {error}"))?;
     fs::write(&path, content)
         .map_err(|error| format!("写入状态文件失败 {}: {error}", path.display()))
 }
@@ -486,6 +535,26 @@ fn default_app_state() -> AppState {
     AppState {
         favorites: Vec::new(),
         launch_mode: "new_terminal".to_string(),
+        deepseek_launcher: default_deepseek_launcher(),
+    }
+}
+
+fn default_deepseek_launcher() -> String {
+    "cmd".to_string()
+}
+
+fn normalize_deepseek_launcher(value: Option<String>) -> String {
+    match value.as_deref() {
+        Some("ps1") => "ps1".to_string(),
+        _ => default_deepseek_launcher(),
+    }
+}
+
+fn deepseek_command(launcher: &str) -> &'static str {
+    if launcher == "ps1" {
+        DEEPSEEK_PS1_COMMAND
+    } else {
+        DEEPSEEK_CMD_COMMAND
     }
 }
 
@@ -520,24 +589,34 @@ fn workspace_dir(workspace: Option<String>) -> PathBuf {
     }
 }
 
-fn launch_resume(command: &str, resume_arg: &str, session_id: &str, cwd: &Path) -> Result<(), String> {
+fn launch_resume(
+    command: &str,
+    resume_arg: &str,
+    session_id: &str,
+    cwd: &Path,
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let cwd_text = cwd.to_string_lossy().to_string();
+        if command.ends_with(".ps1") {
+            return launch_resume_powershell(command, resume_arg, session_id, cwd, &cwd_text);
+        }
 
         match Command::new("wt")
-            .args(["-d", &cwd_text, "cmd", "/K", command, resume_arg, session_id])
+            .args([
+                "-d", &cwd_text, "cmd", "/K", command, resume_arg, session_id,
+            ])
             .spawn()
         {
             Ok(_) => return Ok(()),
-            Err(_) => {
-                Command::new("cmd")
-                    .args(["/C", "start", command, "cmd", "/K", command, resume_arg, session_id])
-                    .current_dir(cwd)
-                    .spawn()
-                    .map(|_| ())
-                    .map_err(|error| format!("启动 {command} 失败: {error}"))
-            }
+            Err(_) => Command::new("cmd")
+                .args([
+                    "/C", "start", command, "cmd", "/K", command, resume_arg, session_id,
+                ])
+                .current_dir(cwd)
+                .spawn()
+                .map(|_| ())
+                .map_err(|error| format!("启动 {command} 失败: {error}")),
         }
     }
 
@@ -550,6 +629,71 @@ fn launch_resume(command: &str, resume_arg: &str, session_id: &str, cwd: &Path) 
             .map(|_| ())
             .map_err(|error| format!("启动 {command} 失败: {error}"))
     }
+}
+
+#[cfg(target_os = "windows")]
+fn command_output(command: &str, arg: &str) -> std::io::Result<std::process::Output> {
+    if command.ends_with(".ps1") {
+        Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &format!("{command} {arg}"),
+            ])
+            .output()
+    } else {
+        Command::new(command).arg(arg).output()
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn command_output(command: &str, arg: &str) -> std::io::Result<std::process::Output> {
+    Command::new(command).arg(arg).output()
+}
+
+#[cfg(target_os = "windows")]
+fn launch_resume_powershell(
+    command: &str,
+    resume_arg: &str,
+    session_id: &str,
+    cwd: &Path,
+    cwd_text: &str,
+) -> Result<(), String> {
+    let script = format!(
+        "{} {} {}",
+        command,
+        powershell_quote(resume_arg),
+        powershell_quote(session_id)
+    );
+
+    match Command::new("wt")
+        .args([
+            "-d",
+            cwd_text,
+            "powershell.exe",
+            "-NoExit",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
+        .spawn()
+    {
+        Ok(_) => Ok(()),
+        Err(_) => Command::new("powershell.exe")
+            .args(["-NoExit", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .current_dir(cwd)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("启动 {command} 失败: {error}")),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn powershell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 fn string_at(value: &Value, key: &str) -> Option<String> {
@@ -655,6 +799,7 @@ fn main() {
             list_sessions,
             get_app_state,
             set_favorite,
+            set_deepseek_launcher,
             check_agent,
             open_session_folder,
             resume_session

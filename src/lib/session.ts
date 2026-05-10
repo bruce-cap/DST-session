@@ -1,4 +1,5 @@
 import type { GroupBy, SessionGroup, SessionRecord } from "../types";
+import { localeToBcp47, type Locale } from "./i18n";
 
 type RawSession = {
   metadata?: {
@@ -116,7 +117,7 @@ export function getGroupKey(
   return { key, label: workspaceLeafName(key) };
 }
 
-export function formatDateTime(value: string | null): string {
+export function formatDateTime(value: string | null, locale: Locale = "zh"): string {
   if (!value) {
     return "-";
   }
@@ -126,7 +127,7 @@ export function formatDateTime(value: string | null): string {
     return value;
   }
 
-  return date.toLocaleString();
+  return date.toLocaleString(localeToBcp47(locale));
 }
 
 export function formatTokenCount(tokens: number): string {

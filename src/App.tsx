@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import logoUrl from "./assets/logo.svg";
-import { buildResumeCommand } from "./lib/commands";
+import { buildResumeCommand, deepseekCommand } from "./lib/commands";
+import { setLocale, useLocale, useT, type Locale, type TFunction } from "./lib/i18n";
 import {
   compareUpdatedDesc,
   formatDateTime,
@@ -9,27 +10,32 @@ import {
   groupSessions,
   matchesSession
 } from "./lib/session";
-import type { AppState, DeepseekStatus, GroupBy, SessionRecord, SessionSource } from "./types";
+import type { AppState, DeepseekLauncher, DeepseekStatus, GroupBy, SessionRecord, SessionSource } from "./types";
 
-const GROUP_OPTIONS: Array<{ value: GroupBy; label: string }> = [
-  { value: "workspace", label: "按项目" },
-  { value: "date", label: "按日期" },
-  { value: "model", label: "按模型" },
-  { value: "mode", label: "按模式" },
-  { value: "favorite", label: "按收藏" },
-  { value: "none", label: "全部" }
-];
+const GROUP_KEYS: Record<GroupBy, "group_workspace" | "group_date" | "group_model" | "group_mode" | "group_favorite" | "group_none"> = {
+  workspace: "group_workspace",
+  date: "group_date",
+  model: "group_model",
+  mode: "group_mode",
+  favorite: "group_favorite",
+  none: "group_none"
+};
+
+const GROUP_ORDER: GroupBy[] = ["workspace", "date", "model", "mode", "favorite", "none"];
 
 const APP_VERSION = __APP_VERSION__;
 
 const defaultState: AppState = {
   favorites: [],
-  launchMode: "new_terminal"
+  launchMode: "new_terminal",
+  deepseekLauncher: "cmd"
 };
 
 type ThemeMode = "light" | "dark";
 
 export default function App() {
+  const t = useT();
+  const locale = useLocale();
   const [source, setSource] = useState<SessionSource>("deepseek");
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [appState, setAppState] = useState<AppState>(defaultState);
@@ -97,10 +103,13 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [records, state, deepseek] = await Promise.all([
+      const state = await invoke<AppState>("get_app_state");
+      const [records, deepseek] = await Promise.all([
         invoke<SessionRecord[]>("list_sessions", { source }),
-        invoke<AppState>("get_app_state"),
-        invoke<DeepseekStatus>("check_agent", { source })
+        invoke<DeepseekStatus>("check_agent", {
+          source,
+          deepseekLauncher: state.deepseekLauncher
+        })
       ]);
       setSessions(records);
       setAppState(state);
@@ -127,9 +136,9 @@ export default function App() {
   }
 
   async function copyCommand(session: SessionRecord) {
-    const command = resumeCommand(session);
+    const command = resumeCommand(session, appState.deepseekLauncher);
     await navigator.clipboard.writeText(command);
-    setNotice("恢复命令已复制");
+    setNotice(t("copied"));
   }
 
   async function openFolder(session: SessionRecord) {
@@ -147,9 +156,26 @@ export default function App() {
         source: session.source,
         sessionId: session.id,
         workspace: session.workspace || null,
-        launchMode: appState.launchMode
+        launchMode: appState.launchMode,
+        deepseekLauncher: appState.deepseekLauncher
       });
-      setNotice(`已启动：${resumeCommand(session)}`);
+      setNotice(t("launched", { command: resumeCommand(session, appState.deepseekLauncher) }));
+    } catch (caught) {
+      setError(toMessage(caught));
+    }
+  }
+
+  async function changeDeepseekLauncher(next: DeepseekLauncher) {
+    try {
+      const nextState = await invoke<AppState>("set_deepseek_launcher", { launcher: next });
+      setAppState(nextState);
+      if (source === "deepseek") {
+        const nextStatus = await invoke<DeepseekStatus>("check_agent", {
+          source,
+          deepseekLauncher: nextState.deepseekLauncher
+        });
+        setStatus(nextStatus);
+      }
     } catch (caught) {
       setError(toMessage(caught));
     }
@@ -162,18 +188,18 @@ export default function App() {
           <img src={logoUrl} alt="DeepSeek Session Manager logo" />
           <div>
             <strong>DeepSeek Session Manager</strong>
-            <span>{sourceLabel(source)} 会话浏览与恢复</span>
+            <span>{t("brand_subtitle", { source: sourceLabel(source, t) })}</span>
           </div>
         </div>
 
         <div className="top-search">
-          <div className="source-switch" aria-label="会话来源">
+          <div className="source-switch" aria-label={t("source_deepseek")}>
             <button
               type="button"
               className={source === "deepseek" ? "active tooltip-target" : "tooltip-target"}
               onClick={() => setSource("deepseek")}
-              data-tooltip="DeepSeek TUI"
-              aria-label="DeepSeek TUI"
+              data-tooltip={t("source_deepseek")}
+              aria-label={t("source_deepseek")}
             >
               <img src={logoUrl} alt="" />
             </button>
@@ -181,8 +207,8 @@ export default function App() {
               type="button"
               className={source === "claude" ? "active tooltip-target" : "tooltip-target"}
               onClick={() => setSource("claude")}
-              data-tooltip="Claude Code"
-              aria-label="Claude Code"
+              data-tooltip={t("source_claude")}
+              aria-label={t("source_claude")}
             >
               <span className="claude-mark">C</span>
             </button>
@@ -192,25 +218,25 @@ export default function App() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索标题、消息、workspace、模型或 ID"
+              placeholder={t("search_placeholder")}
             />
             {search && (
               <button
                 type="button"
                 className="input-clear"
-                aria-label="清空搜索"
+                aria-label={t("clear_search")}
                 onClick={() => setSearch("")}
               >
                 <Icon name="close" />
               </button>
             )}
           </div>
-          <label className="select-chip tooltip-target" data-tooltip="分组方式">
+          <label className="select-chip tooltip-target" data-tooltip={t("group_by")}>
             <Icon name="layers" />
             <select value={groupBy} onChange={(event) => setGroupBy(event.target.value as GroupBy)}>
-              {GROUP_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+              {GROUP_ORDER.map((option) => (
+                <option key={option} value={option}>
+                  {t(GROUP_KEYS[option])}
                 </option>
               ))}
             </select>
@@ -220,31 +246,36 @@ export default function App() {
 
         <div className="top-actions">
           <IconButton
-            label="启动会话"
+            label={t("action_launch")}
             icon="play"
             primary
             onClick={() => selected && void resume(selected)}
             disabled={!selected || !status?.available || Boolean(selected.invalidReason)}
           />
-          <IconButton label="复制恢复命令" icon="copy" onClick={() => selected && void copyCommand(selected)} disabled={!selected} />
-          <IconButton label="打开会话文件目录" icon="folder" onClick={() => selected && void openFolder(selected)} disabled={!selected} />
-          <IconButton label="刷新" icon="refresh" onClick={() => void loadAll()} />
+          <IconButton label={t("action_copy")} icon="copy" onClick={() => selected && void copyCommand(selected)} disabled={!selected} />
+          <IconButton label={t("action_open_folder")} icon="folder" onClick={() => selected && void openFolder(selected)} disabled={!selected} />
+          <IconButton label={t("action_refresh")} icon="refresh" onClick={() => void loadAll()} />
           <div className="settings-wrap" ref={settingsRef}>
             <IconButton
-              label="设置"
+              label={t("action_settings")}
               icon="settings"
               onClick={() => setSettingsOpen((open) => !open)}
               ariaExpanded={settingsOpen}
               active={settingsOpen}
+              tooltipAlign="end"
             />
             {settingsOpen && (
               <div className="settings-menu" role="dialog">
                 <div className="settings-title">
-                  <span>设置</span>
+                  <span>{t("action_settings")}</span>
                   <span className="settings-version">v{APP_VERSION}</span>
                 </div>
+                <div className="settings-row">
+                  <span>{t("settings_language")}</span>
+                  <LocaleToggle locale={locale} onChange={setLocale} />
+                </div>
                 <label className="settings-row">
-                  <span>暗色主题</span>
+                  <span>{t("settings_dark")}</span>
                   <button
                     type="button"
                     className={`switch ${theme === "dark" ? "on" : ""}`}
@@ -255,21 +286,25 @@ export default function App() {
                   </button>
                 </label>
                 <div className="settings-note">
-                  <span>启动方式</span>
-                  <b>新系统终端</b>
+                  <span>{t("settings_launch_mode")}</span>
+                  <b>{t("settings_launch_mode_value")}</b>
+                </div>
+                <div className="settings-row">
+                  <span>{t("settings_deepseek_launcher")}</span>
+                  <LauncherToggle value={appState.deepseekLauncher} onChange={(next) => void changeDeepseekLauncher(next)} />
                 </div>
                 <div className={`settings-status ${status?.available ? "ok" : "bad"}`}>
                   <span className="status-dot" />
                   <div>
-                    <b>{sourceCommand(source)}</b>
+                    <b>{sourceCommand(source, appState.deepseekLauncher)}</b>
                     <small>
                       {status?.available
-                        ? status.version || "可用"
-                        : status?.message || "不可用"}
+                        ? status.version || t("settings_cli_available")
+                        : status?.message || t("settings_cli_unavailable")}
                     </small>
                   </div>
                 </div>
-                <p>当前只读扫描 {sourceLabel(source)} 原始会话文件，收藏写入本工具状态文件。</p>
+                <p>{t("settings_footer", { source: sourceLabel(source, t) })}</p>
               </div>
             )}
           </div>
@@ -286,9 +321,7 @@ export default function App() {
           {cliMissing && !error && (
             <div className="message error">
               <Icon name="alert" />
-              <span>
-                未检测到 <code>{sourceCommand(source)}</code> 命令。请确认已安装并加入 PATH，或使用「复制恢复命令」手动执行。
-              </span>
+              <span>{t("cli_missing", { command: sourceCommand(source, appState.deepseekLauncher) })}</span>
             </div>
           )}
           {notice && (
@@ -298,7 +331,7 @@ export default function App() {
           )}
           {invalidCount > 0 && (
             <div className="message warn">
-              <Icon name="alert" /> <span>有 {invalidCount} 个 session 文件无法解析，已隔离显示。</span>
+              <Icon name="alert" /> <span>{t("invalid_count", { count: invalidCount })}</span>
             </div>
           )}
         </section>
@@ -307,7 +340,7 @@ export default function App() {
       <section className="workspace">
         <aside className="group-panel">
           <div className="panel-title">
-            <span>分组</span>
+            <span>{t("panel_groups")}</span>
             <strong>{filtered.length}</strong>
           </div>
           <button
@@ -316,7 +349,7 @@ export default function App() {
             onClick={() => setActiveGroupKey(null)}
           >
             <Icon name="inbox" />
-            <span>全部</span>
+            <span>{t("group_all")}</span>
             <b>{filtered.length}</b>
           </button>
           {groups.map((group) => (
@@ -342,8 +375,8 @@ export default function App() {
           {!loading && visibleSessions.length === 0 && (
             <div className="empty empty-state">
               <Icon name="inbox" />
-              <p>没有匹配的会话</p>
-              <small>调整搜索或分组，或点击右上角刷新。</small>
+              <p>{t("empty_no_match")}</p>
+              <small>{t("empty_no_match_hint")}</small>
             </div>
           )}
           {!loading &&
@@ -363,11 +396,11 @@ export default function App() {
                       onClick={() => setSelectedId(session.id)}
                     >
                       <header className="session-card-head">
-                        <h3 className="session-title">{session.title || "(untitled)"}</h3>
+                        <h3 className="session-title">{session.title || t("untitled")}</h3>
                         <button
                           type="button"
                           className={`star ${favorite ? "on" : ""}`}
-                          aria-label={favorite ? "取消收藏" : "收藏"}
+                          aria-label={favorite ? t("unfavorite") : t("favorite")}
                           onClick={(event) => {
                             event.stopPropagation();
                             void toggleFavorite(session);
@@ -382,11 +415,11 @@ export default function App() {
                       </div>
                       <footer className="session-foot">
                         <span className="pill mono">{session.shortId}</span>
-                        <span className="pill">{formatDateTime(session.updatedAt)}</span>
+                        <span className="pill">{formatDateTime(session.updatedAt, locale)}</span>
                         {session.model && <span className="pill subtle">{session.model}</span>}
                         <span className="spacer" />
                         <span className="meta-num">
-                          <b>{session.messageCount}</b> 条
+                          <b>{session.messageCount}</b> {t("card_messages_unit")}
                         </span>
                         <span className="meta-num">
                           <b>{formatTokenCount(session.totalTokens)}</b> tokens
@@ -404,13 +437,16 @@ export default function App() {
             <SessionDetails
               session={selected}
               favorite={isFavorite(selected, favoriteSet)}
+              deepseekLauncher={appState.deepseekLauncher}
+              locale={locale}
+              t={t}
               onToggleFavorite={() => void toggleFavorite(selected)}
               onCopyCommand={() => void copyCommand(selected)}
             />
           ) : (
             <div className="empty empty-state">
               <Icon name="inbox" />
-              <p>选择一个会话查看详情</p>
+              <p>{t("empty_select")}</p>
             </div>
           )}
         </aside>
@@ -422,11 +458,14 @@ export default function App() {
 function SessionDetails(props: {
   session: SessionRecord;
   favorite: boolean;
+  deepseekLauncher: DeepseekLauncher;
+  locale: Locale;
+  t: TFunction;
   onToggleFavorite: () => void;
   onCopyCommand: () => void;
 }) {
-  const { session } = props;
-  const command = resumeCommand(session);
+  const { session, t, locale } = props;
+  const command = resumeCommand(session, props.deepseekLauncher);
   const workspaceMissing = Boolean(session.workspace) && !session.workspace.match(/^[A-Za-z]:\\/);
   const [copied, setCopied] = useState(false);
 
@@ -439,13 +478,13 @@ function SessionDetails(props: {
   return (
     <div className="details">
       <div className="detail-head">
-        <p className="eyebrow">Session Detail</p>
+        <p className="eyebrow">{t("session_detail")}</p>
         <div className="detail-title-row">
-          <h2>{session.title || "(untitled)"}</h2>
+          <h2>{session.title || t("untitled")}</h2>
           <button
             type="button"
             className={`star lg ${props.favorite ? "on" : ""}`}
-            aria-label={props.favorite ? "取消收藏" : "收藏"}
+            aria-label={props.favorite ? t("unfavorite") : t("favorite")}
             onClick={props.onToggleFavorite}
           >
             <Icon name={props.favorite ? "star-fill" : "star"} />
@@ -467,53 +506,53 @@ function SessionDetails(props: {
       <div className="stat-row">
         <div className="stat">
           <b>{session.messageCount}</b>
-          <span>条消息</span>
+          <span>{t("stat_messages")}</span>
         </div>
         <div className="stat">
           <b>{formatTokenCount(session.totalTokens)}</b>
-          <span>tokens</span>
+          <span>{t("stat_tokens")}</span>
         </div>
         <div className="stat">
-          <b>{formatRelative(session.updatedAt)}</b>
-          <span>最近更新</span>
+          <b>{formatRelative(session.updatedAt, locale, t)}</b>
+          <span>{t("stat_updated")}</span>
         </div>
       </div>
 
       <dl>
-        <dt>完整 ID</dt>
+        <dt>{t("label_id")}</dt>
         <dd className="mono">{session.id}</dd>
-        <dt>更新时间</dt>
-        <dd>{formatDateTime(session.updatedAt)}</dd>
-        <dt>创建时间</dt>
-        <dd>{formatDateTime(session.createdAt)}</dd>
-        <dt>Workspace</dt>
-        <dd>{session.workspace || "未记录"}</dd>
-        <dt>文件</dt>
+        <dt>{t("label_updated")}</dt>
+        <dd>{formatDateTime(session.updatedAt, locale)}</dd>
+        <dt>{t("label_created")}</dt>
+        <dd>{formatDateTime(session.createdAt, locale)}</dd>
+        <dt>{t("label_workspace")}</dt>
+        <dd>{session.workspace || t("not_recorded")}</dd>
+        <dt>{t("label_file")}</dt>
         <dd className="mono small">{session.path}</dd>
       </dl>
 
       <div className="preview-box">
-        <span>首条用户消息</span>
-        <p>{session.preview || "无可展示摘要"}</p>
+        <span>{t("preview_label")}</span>
+        <p>{session.preview || t("preview_empty")}</p>
       </div>
 
       <div className="command-box">
         <div className="command-head">
-          <span>恢复命令</span>
+          <span>{t("command_label")}</span>
           <button
             type="button"
             className={`inline-copy ${copied ? "copied" : ""}`}
             onClick={handleCopy}
           >
             <Icon name={copied ? "check" : "copy"} />
-            {copied ? "已复制" : "复制"}
+            {copied ? t("copy_done") : t("copy_now")}
           </button>
         </div>
         <code>{command}</code>
       </div>
 
-      <p className="hint">启动方式：新系统终端。V0.1 不修改原始 session JSON。</p>
-      {workspaceMissing && <p className="hint warn">原 workspace 不存在，后端会退回用户主目录启动。</p>}
+      <p className="hint">{t("hint_launch")}</p>
+      {workspaceMissing && <p className="hint warn">{t("hint_workspace_missing")}</p>}
     </div>
   );
 }
@@ -526,6 +565,7 @@ function IconButton(props: {
   primary?: boolean;
   active?: boolean;
   ariaExpanded?: boolean;
+  tooltipAlign?: "start" | "center" | "end";
 }) {
   return (
     <button
@@ -536,9 +576,56 @@ function IconButton(props: {
       aria-label={props.label}
       aria-expanded={props.ariaExpanded}
       data-tooltip={props.label}
+      data-tooltip-align={props.tooltipAlign ?? "center"}
     >
       <Icon name={props.icon} />
     </button>
+  );
+}
+
+function LocaleToggle({ locale, onChange }: { locale: Locale; onChange: (locale: Locale) => void }) {
+  return (
+    <div className="locale-toggle" role="group" aria-label="Language">
+      <button
+        type="button"
+        className={locale === "zh" ? "active" : ""}
+        onClick={() => onChange("zh")}
+        aria-pressed={locale === "zh"}
+      >
+        中
+      </button>
+      <button
+        type="button"
+        className={locale === "en" ? "active" : ""}
+        onClick={() => onChange("en")}
+        aria-pressed={locale === "en"}
+      >
+        EN
+      </button>
+    </div>
+  );
+}
+
+function LauncherToggle({ value, onChange }: { value: DeepseekLauncher; onChange: (value: DeepseekLauncher) => void }) {
+  return (
+    <div className="locale-toggle" role="group" aria-label="DeepSeek launcher">
+      <button
+        type="button"
+        className={value === "cmd" ? "active" : ""}
+        onClick={() => onChange("cmd")}
+        aria-pressed={value === "cmd"}
+      >
+        cmd
+      </button>
+      <button
+        type="button"
+        className={value === "ps1" ? "active" : ""}
+        onClick={() => onChange("ps1")}
+        aria-pressed={value === "ps1"}
+      >
+        ps1
+      </button>
+    </div>
   );
 }
 
@@ -697,8 +784,8 @@ function groupIconFor(groupBy: GroupBy, key: string): IconName {
   return "folder-small";
 }
 
-function resumeCommand(session: SessionRecord): string {
-  return buildResumeCommand(session.source, session.id);
+function resumeCommand(session: SessionRecord, deepseekLauncher: DeepseekLauncher): string {
+  return buildResumeCommand(session.source, session.id, deepseekLauncher);
 }
 
 function toMessage(value: unknown): string {
@@ -724,25 +811,25 @@ function isFavorite(session: SessionRecord, favorites: Set<string>): boolean {
   return favorites.has(favoriteKey(session)) || favorites.has(session.id);
 }
 
-function sourceLabel(source: SessionSource): string {
-  return source === "claude" ? "Claude Code" : "DeepSeek TUI";
+function sourceLabel(source: SessionSource, t: TFunction): string {
+  return source === "claude" ? t("source_claude") : t("source_deepseek");
 }
 
-function sourceCommand(source: SessionSource): string {
-  return source === "claude" ? "claude" : "deepseek-tui.cmd";
+function sourceCommand(source: SessionSource, deepseekLauncher: DeepseekLauncher = "cmd"): string {
+  return source === "claude" ? "claude" : deepseekCommand(deepseekLauncher);
 }
 
-function formatRelative(value: string | null): string {
+function formatRelative(value: string | null, locale: Locale, t: TFunction): string {
   if (!value) return "-";
   const target = new Date(value).getTime();
-  if (Number.isNaN(target)) return formatDateTime(value);
+  if (Number.isNaN(target)) return formatDateTime(value, locale);
   const delta = Date.now() - target;
   const minute = 60_000;
   const hour = 3600_000;
   const day = 86_400_000;
-  if (delta < minute) return "刚刚";
-  if (delta < hour) return `${Math.floor(delta / minute)} 分钟前`;
-  if (delta < day) return `${Math.floor(delta / hour)} 小时前`;
-  if (delta < 7 * day) return `${Math.floor(delta / day)} 天前`;
-  return formatDateTime(value);
+  if (delta < minute) return t("rel_just_now");
+  if (delta < hour) return t("rel_minutes", { n: Math.floor(delta / minute) });
+  if (delta < day) return t("rel_hours", { n: Math.floor(delta / hour) });
+  if (delta < 7 * day) return t("rel_days", { n: Math.floor(delta / day) });
+  return formatDateTime(value, locale);
 }
