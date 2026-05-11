@@ -183,78 +183,44 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <header className="app-bar">
+      <header className="titlebar">
         <div className="brand">
-          <img src={logoUrl} alt="DeepSeek Session Manager logo" />
-          <div>
-            <strong>DeepSeek Session Manager</strong>
-            <span>{t("brand_subtitle", { source: sourceLabel(source, t) })}</span>
+          <div className="brand-mark">
+            <img src={logoUrl} alt="" />
+          </div>
+          <div className="brand-text">
+            <strong>Session Manager</strong>
+            <span>DeepSeek · Claude Code</span>
           </div>
         </div>
 
-        <div className="top-search">
-          <div className="source-switch" aria-label={t("source_deepseek")}>
-            <button
-              type="button"
-              className={source === "deepseek" ? "active tooltip-target" : "tooltip-target"}
-              onClick={() => setSource("deepseek")}
-              data-tooltip={t("source_deepseek")}
-              aria-label={t("source_deepseek")}
-            >
-              <img src={logoUrl} alt="" />
-            </button>
-            <button
-              type="button"
-              className={source === "claude" ? "active tooltip-target" : "tooltip-target"}
-              onClick={() => setSource("claude")}
-              data-tooltip={t("source_claude")}
-              aria-label={t("source_claude")}
-            >
-              <span className="claude-mark">C</span>
-            </button>
-          </div>
-          <div className="search-input">
-            <Icon name="search" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={t("search_placeholder")}
-            />
-            {search && (
-              <button
-                type="button"
-                className="input-clear"
-                aria-label={t("clear_search")}
-                onClick={() => setSearch("")}
-              >
-                <Icon name="close" />
-              </button>
-            )}
-          </div>
-          <label className="select-chip tooltip-target" data-tooltip={t("group_by")}>
-            <Icon name="layers" />
-            <select value={groupBy} onChange={(event) => setGroupBy(event.target.value as GroupBy)}>
-              {GROUP_ORDER.map((option) => (
-                <option key={option} value={option}>
-                  {t(GROUP_KEYS[option])}
-                </option>
-              ))}
-            </select>
-            <Icon name="chevron" />
-          </label>
-        </div>
-
-        <div className="top-actions">
-          <IconButton
-            label={t("action_launch")}
-            icon="play"
-            primary
-            onClick={() => selected && void resume(selected)}
-            disabled={!selected || !status?.available || Boolean(selected.invalidReason)}
+        <div className="search-input titlebar-search">
+          <Icon name="search" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("search_placeholder")}
           />
-          <IconButton label={t("action_copy")} icon="copy" onClick={() => selected && void copyCommand(selected)} disabled={!selected} />
-          <IconButton label={t("action_open_folder")} icon="folder" onClick={() => selected && void openFolder(selected)} disabled={!selected} />
-          <IconButton label={t("action_refresh")} icon="refresh" onClick={() => void loadAll()} />
+          {search ? (
+            <button
+              type="button"
+              className="input-clear"
+              aria-label={t("clear_search")}
+              onClick={() => setSearch("")}
+            >
+              <Icon name="close" />
+            </button>
+          ) : (
+            <kbd className="kbd">⌘K</kbd>
+          )}
+        </div>
+
+        <div className="titlebar-actions">
+          <IconButton
+            label={t("action_refresh")}
+            icon="refresh"
+            onClick={() => void loadAll()}
+          />
           <div className="settings-wrap" ref={settingsRef}>
             <IconButton
               label={t("action_settings")}
@@ -274,7 +240,7 @@ export default function App() {
                   <span>{t("settings_language")}</span>
                   <LocaleToggle locale={locale} onChange={setLocale} />
                 </div>
-                <label className="settings-row">
+                <div className="settings-row">
                   <span>{t("settings_dark")}</span>
                   <button
                     type="button"
@@ -284,7 +250,7 @@ export default function App() {
                   >
                     <i />
                   </button>
-                </label>
+                </div>
                 <div className="settings-note">
                   <span>{t("settings_launch_mode")}</span>
                   <b>{t("settings_launch_mode_value")}</b>
@@ -338,40 +304,93 @@ export default function App() {
       )}
 
       <section className="workspace">
-        <aside className="group-panel">
-          <div className="panel-title">
-            <span>{t("panel_groups")}</span>
-            <strong>{filtered.length}</strong>
-          </div>
-          <button
-            type="button"
-            className={`group-item ${activeGroupKey === null ? "active" : ""}`}
-            onClick={() => setActiveGroupKey(null)}
-          >
-            <Icon name="inbox" />
-            <span>{t("group_all")}</span>
-            <b>{filtered.length}</b>
-          </button>
-          {groups.map((group) => (
+        <aside className="sidebar">
+          <div className="source-picker">
             <button
               type="button"
-              className={`group-item ${activeGroupKey === group.key ? "active" : ""}`}
-              key={group.key}
-              onClick={() => {
-                setActiveGroupKey((current) => (current === group.key ? null : group.key));
-                setSelectedId(group.sessions[0]?.id ?? null);
-              }}
-              title={group.key}
+              className={`source-card ${source === "deepseek" ? "active" : ""}`}
+              onClick={() => setSource("deepseek")}
             >
-              <Icon name={groupIconFor(groupBy, group.key)} />
-              <span>{group.label}</span>
-              <b>{group.sessions.length}</b>
+              <span className="source-card-badge deepseek">
+                <img src={logoUrl} alt="" />
+              </span>
+              <span className="source-card-text">
+                <b>DeepSeek</b>
+                <small>TUI</small>
+              </span>
             </button>
-          ))}
+            <button
+              type="button"
+              className={`source-card ${source === "claude" ? "active" : ""}`}
+              onClick={() => setSource("claude")}
+            >
+              <span className="source-card-badge claude">C</span>
+              <span className="source-card-text">
+                <b>Claude</b>
+                <small>Code</small>
+              </span>
+            </button>
+          </div>
+
+          <div className="sidebar-section">
+            <div className="sidebar-label">
+              <span>{t("group_by")}</span>
+            </div>
+            <div className="group-select">
+              {GROUP_ORDER.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={`group-select-item ${groupBy === option ? "active" : ""}`}
+                  onClick={() => setGroupBy(option)}
+                >
+                  {t(GROUP_KEYS[option])}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="sidebar-section">
+            <div className="sidebar-label">
+              <span>{t("panel_groups")}</span>
+              <b>{filtered.length}</b>
+            </div>
+            <div className="group-list">
+              <button
+                type="button"
+                className={`group-item ${activeGroupKey === null ? "active" : ""}`}
+                onClick={() => setActiveGroupKey(null)}
+              >
+                <span>{t("group_all")}</span>
+                <em>{filtered.length}</em>
+              </button>
+              {groups.map((group) => (
+                <button
+                  type="button"
+                  className={`group-item ${activeGroupKey === group.key ? "active" : ""}`}
+                  key={group.key}
+                  onClick={() => {
+                    setActiveGroupKey((current) => (current === group.key ? null : group.key));
+                    setSelectedId(group.sessions[0]?.id ?? null);
+                  }}
+                  title={group.key}
+                >
+                  <span>{group.label}</span>
+                  <em>{group.sessions.length}</em>
+                </button>
+              ))}
+            </div>
+          </div>
         </aside>
 
         <section className="session-list">
-          {loading && <div className="empty"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div>}
+          {loading && (
+            <div className="empty">
+              <div className="skeleton" />
+              <div className="skeleton" />
+              <div className="skeleton" />
+            </div>
+          )}
           {!loading && visibleSessions.length === 0 && (
             <div className="empty empty-state">
               <Icon name="inbox" />
@@ -395,36 +414,33 @@ export default function App() {
                       className={`session-card ${active ? "active" : ""} ${session.invalidReason ? "invalid" : ""}`}
                       onClick={() => setSelectedId(session.id)}
                     >
-                      <header className="session-card-head">
+                      <div className="session-card-main">
                         <h3 className="session-title">{session.title || t("untitled")}</h3>
-                        <button
-                          type="button"
-                          className={`star ${favorite ? "on" : ""}`}
-                          aria-label={favorite ? t("unfavorite") : t("favorite")}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void toggleFavorite(session);
-                          }}
-                        >
-                          <Icon name={favorite ? "star-fill" : "star"} />
-                        </button>
-                      </header>
-                      <div className="session-path" title={session.workspace || session.path}>
-                        <Icon name="folder-small" />
-                        <span>{session.workspace || session.path}</span>
+                        <div className="session-meta">
+                          <span className="time">{formatRelative(session.updatedAt, locale, t)}</span>
+                          <span className="dot" />
+                          <span className="session-meta-path">
+                            {workspaceLeaf(session.workspace) || session.shortId}
+                          </span>
+                          {session.model && (
+                            <>
+                              <span className="dot" />
+                              <span className="model-tag">{modelShort(session.model)}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <footer className="session-foot">
-                        <span className="pill mono">{session.shortId}</span>
-                        <span className="pill">{formatDateTime(session.updatedAt, locale)}</span>
-                        {session.model && <span className="pill subtle">{session.model}</span>}
-                        <span className="spacer" />
-                        <span className="meta-num">
-                          <b>{session.messageCount}</b> {t("card_messages_unit")}
-                        </span>
-                        <span className="meta-num">
-                          <b>{formatTokenCount(session.totalTokens)}</b> tokens
-                        </span>
-                      </footer>
+                      <button
+                        type="button"
+                        className={`star ${favorite ? "on" : ""}`}
+                        aria-label={favorite ? t("unfavorite") : t("favorite")}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void toggleFavorite(session);
+                        }}
+                      >
+                        <Icon name={favorite ? "star-fill" : "star"} />
+                      </button>
                     </article>
                   );
                 })}
@@ -439,9 +455,12 @@ export default function App() {
               favorite={isFavorite(selected, favoriteSet)}
               deepseekLauncher={appState.deepseekLauncher}
               locale={locale}
+              status={status}
               t={t}
+              onResume={() => void resume(selected)}
               onToggleFavorite={() => void toggleFavorite(selected)}
               onCopyCommand={() => void copyCommand(selected)}
+              onOpenFolder={() => void openFolder(selected)}
             />
           ) : (
             <div className="empty empty-state">
@@ -460,13 +479,17 @@ function SessionDetails(props: {
   favorite: boolean;
   deepseekLauncher: DeepseekLauncher;
   locale: Locale;
+  status: DeepseekStatus | null;
   t: TFunction;
+  onResume: () => void;
   onToggleFavorite: () => void;
   onCopyCommand: () => void;
+  onOpenFolder: () => void;
 }) {
-  const { session, t, locale } = props;
+  const { session, t, locale, status } = props;
   const command = resumeCommand(session, props.deepseekLauncher);
   const workspaceMissing = Boolean(session.workspace) && !session.workspace.match(/^[A-Za-z]:\\/);
+  const canResume = status?.available && !session.invalidReason;
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
@@ -477,25 +500,41 @@ function SessionDetails(props: {
 
   return (
     <div className="details">
-      <div className="detail-head">
-        <p className="eyebrow">{t("session_detail")}</p>
-        <div className="detail-title-row">
-          <h2>{session.title || t("untitled")}</h2>
+      <header className="hero">
+        <div className="hero-eyebrow">
+          <span className={`source-dot ${session.source}`} />
+          <span>{sourceLabelShort(session.source)}</span>
+          <span className="dot" />
+          <span>{formatRelative(session.updatedAt, locale, t)}</span>
           <button
             type="button"
-            className={`star lg ${props.favorite ? "on" : ""}`}
+            className={`hero-star ${props.favorite ? "on" : ""}`}
             aria-label={props.favorite ? t("unfavorite") : t("favorite")}
             onClick={props.onToggleFavorite}
           >
             <Icon name={props.favorite ? "star-fill" : "star"} />
           </button>
         </div>
-        <div className="detail-chips">
-          <span className="pill mono">{session.shortId}</span>
-          {session.model && <span className="pill">{session.model}</span>}
-          {session.mode && <span className="pill subtle">{session.mode}</span>}
+        <h1 className="hero-title">{session.title || t("untitled")}</h1>
+        {session.preview && <p className="hero-preview">{session.preview}</p>}
+
+        <div className="hero-actions">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={props.onResume}
+            disabled={!canResume}
+          >
+            <Icon name="play" />
+            <span>{t("action_launch")}</span>
+            <kbd className="kbd inverse">⏎</kbd>
+          </button>
+          <button type="button" className="btn-ghost" onClick={props.onOpenFolder}>
+            <Icon name="folder" />
+            <span>{t("action_open_folder")}</span>
+          </button>
         </div>
-      </div>
+      </header>
 
       {session.invalidReason && (
         <div className="message error">
@@ -503,7 +542,7 @@ function SessionDetails(props: {
         </div>
       )}
 
-      <div className="stat-row">
+      <div className="hero-stats">
         <div className="stat">
           <b>{session.messageCount}</b>
           <span>{t("stat_messages")}</span>
@@ -513,45 +552,57 @@ function SessionDetails(props: {
           <span>{t("stat_tokens")}</span>
         </div>
         <div className="stat">
-          <b>{formatRelative(session.updatedAt, locale, t)}</b>
-          <span>{t("stat_updated")}</span>
+          <b>{session.model ? modelShort(session.model) : "—"}</b>
+          <span>model</span>
         </div>
       </div>
 
-      <dl>
-        <dt>{t("label_id")}</dt>
-        <dd className="mono">{session.id}</dd>
-        <dt>{t("label_updated")}</dt>
-        <dd>{formatDateTime(session.updatedAt, locale)}</dd>
-        <dt>{t("label_created")}</dt>
-        <dd>{formatDateTime(session.createdAt, locale)}</dd>
-        <dt>{t("label_workspace")}</dt>
-        <dd>{session.workspace || t("not_recorded")}</dd>
-        <dt>{t("label_file")}</dt>
-        <dd className="mono small">{session.path}</dd>
-      </dl>
-
-      <div className="preview-box">
-        <span>{t("preview_label")}</span>
-        <p>{session.preview || t("preview_empty")}</p>
-      </div>
-
-      <div className="command-box">
-        <div className="command-head">
-          <span>{t("command_label")}</span>
+      <section className="terminal">
+        <div className="terminal-head">
+          <span className="terminal-dots">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="terminal-title">{t("command_label")}</span>
           <button
             type="button"
-            className={`inline-copy ${copied ? "copied" : ""}`}
+            className={`terminal-copy ${copied ? "copied" : ""}`}
             onClick={handleCopy}
           >
             <Icon name={copied ? "check" : "copy"} />
-            {copied ? t("copy_done") : t("copy_now")}
+            <span>{copied ? t("copy_done") : t("copy_now")}</span>
           </button>
         </div>
-        <code>{command}</code>
-      </div>
+        <pre className="terminal-body">
+          <span className="prompt">$</span>
+          <code>{command}</code>
+          <span className="caret" />
+        </pre>
+      </section>
 
-      <p className="hint">{t("hint_launch")}</p>
+      <section className="detail-section">
+        <div className="section-head">{t("label_workspace")}</div>
+        <dl>
+          <dt>{t("label_id")}</dt>
+          <dd className="mono">{session.id}</dd>
+          <dt>{t("label_updated")}</dt>
+          <dd>{formatDateTime(session.updatedAt, locale)}</dd>
+          <dt>{t("label_created")}</dt>
+          <dd>{formatDateTime(session.createdAt, locale)}</dd>
+          <dt>{t("label_workspace")}</dt>
+          <dd className="mono">{session.workspace || t("not_recorded")}</dd>
+          {session.mode && (
+            <>
+              <dt>Mode</dt>
+              <dd>{session.mode}</dd>
+            </>
+          )}
+          <dt>{t("label_file")}</dt>
+          <dd className="mono faint">{session.path}</dd>
+        </dl>
+      </section>
+
       {workspaceMissing && <p className="hint warn">{t("hint_workspace_missing")}</p>}
     </div>
   );
@@ -585,7 +636,7 @@ function IconButton(props: {
 
 function LocaleToggle({ locale, onChange }: { locale: Locale; onChange: (locale: Locale) => void }) {
   return (
-    <div className="locale-toggle" role="group" aria-label="Language">
+    <div className="segmented" role="group" aria-label="Language">
       <button
         type="button"
         className={locale === "zh" ? "active" : ""}
@@ -608,7 +659,7 @@ function LocaleToggle({ locale, onChange }: { locale: Locale; onChange: (locale:
 
 function LauncherToggle({ value, onChange }: { value: DeepseekLauncher; onChange: (value: DeepseekLauncher) => void }) {
   return (
-    <div className="locale-toggle" role="group" aria-label="DeepSeek launcher">
+    <div className="segmented" role="group" aria-label="DeepSeek launcher">
       <button
         type="button"
         className={value === "cmd" ? "active" : ""}
@@ -775,15 +826,6 @@ function Icon({ name }: { name: IconName }) {
   }
 }
 
-function groupIconFor(groupBy: GroupBy, key: string): IconName {
-  if (key === "favorites") return "star-fill";
-  if (groupBy === "date") return "calendar";
-  if (groupBy === "model") return "cpu";
-  if (groupBy === "mode") return "mode";
-  if (groupBy === "favorite") return "star";
-  return "folder-small";
-}
-
 function resumeCommand(session: SessionRecord, deepseekLauncher: DeepseekLauncher): string {
   return buildResumeCommand(session.source, session.id, deepseekLauncher);
 }
@@ -815,6 +857,10 @@ function sourceLabel(source: SessionSource, t: TFunction): string {
   return source === "claude" ? t("source_claude") : t("source_deepseek");
 }
 
+function sourceLabelShort(source: SessionSource): string {
+  return source === "claude" ? "Claude Code" : "DeepSeek TUI";
+}
+
 function sourceCommand(source: SessionSource, deepseekLauncher: DeepseekLauncher = "cmd"): string {
   return source === "claude" ? "claude" : deepseekCommand(deepseekLauncher);
 }
@@ -832,4 +878,14 @@ function formatRelative(value: string | null, locale: Locale, t: TFunction): str
   if (delta < day) return t("rel_hours", { n: Math.floor(delta / hour) });
   if (delta < 7 * day) return t("rel_days", { n: Math.floor(delta / day) });
   return formatDateTime(value, locale);
+}
+
+function workspaceLeaf(path: string): string {
+  if (!path) return "";
+  const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
+  return normalized.split("/").pop() || path;
+}
+
+function modelShort(model: string): string {
+  return model.replace(/^deepseek-/i, "").replace(/^claude-/i, "");
 }

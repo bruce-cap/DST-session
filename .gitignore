@@ -15,3 +15,4 @@ sessions/
 .DS_Store
 /deepseek-session.ps1
 /deepseek-session-manager-prd.md
+/docs/*
