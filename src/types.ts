@@ -1,5 +1,5 @@
 export type GroupBy = "workspace" | "date" | "model" | "mode" | "favorite" | "none";
-export type SessionSource = "deepseek" | "claude";
+export type SessionSource = "deepseek" | "claude" | "codex";
 export type DeepseekLauncher = "cmd" | "ps1";
 
 export interface SessionRecord {

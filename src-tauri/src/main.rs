@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const DEEPSEEK_CMD_COMMAND: &str = "deepseek.cmd";
 const DEEPSEEK_PS1_COMMAND: &str = "deepseek.ps1";
 const CLAUDE_CODE_COMMAND: &str = "claude.cmd";
+const CODEX_COMMAND: &str = "codex.ps1";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,6 +57,11 @@ fn list_sessions(
             sessions_dir
                 .map(PathBuf::from)
                 .unwrap_or_else(default_claude_projects_dir),
+        ),
+        "codex" => list_codex_sessions(
+            sessions_dir
+                .map(PathBuf::from)
+                .unwrap_or_else(default_codex_db_path),
         ),
         _ => list_deepseek_sessions(
             sessions_dir
@@ -189,6 +195,113 @@ fn list_claude_sessions(dir: PathBuf) -> Result<Vec<SessionRecord>, String> {
     Ok(records)
 }
 
+fn list_codex_sessions(db_path: PathBuf) -> Result<Vec<SessionRecord>, String> {
+    if !db_path.exists() {
+        return Err(format!(
+            "Codex 数据库不存在：{}。请确认已安装 Codex CLI 并至少运行过一次，或在设置中指定自定义路径。",
+            db_path.display()
+        ));
+    }
+
+    // Codex may be running; open read-only so we never block the writer.
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .map_err(|error| format!("打开 Codex 数据库失败 {}: {error}", db_path.display()))?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, first_user_message, cwd, \
+                    updated_at_ms, created_at_ms, rollout_path \
+             FROM threads \
+             WHERE archived = 0 \
+             ORDER BY updated_at_ms DESC",
+        )
+        .map_err(|error| format!("查询 Codex threads 失败: {error}"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(CodexRow {
+                id: row.get::<_, String>(0)?,
+                title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                preview: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                cwd: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                updated_at_ms: row.get::<_, Option<i64>>(4)?,
+                created_at_ms: row.get::<_, Option<i64>>(5)?,
+                rollout_path: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+            })
+        })
+        .map_err(|error| format!("枚举 Codex threads 失败: {error}"))?;
+
+    let mut records = Vec::new();
+    for row in rows {
+        match row {
+            Ok(raw) => records.push(codex_record_from_row(raw)),
+            Err(error) => records.push(invalid_record(
+                "codex",
+                "",
+                &db_path.to_string_lossy(),
+                format!("读取 Codex 线程失败: {error}"),
+            )),
+        }
+    }
+
+    Ok(records)
+}
+
+struct CodexRow {
+    id: String,
+    title: String,
+    preview: String,
+    cwd: String,
+    updated_at_ms: Option<i64>,
+    created_at_ms: Option<i64>,
+    rollout_path: String,
+}
+
+fn codex_record_from_row(row: CodexRow) -> SessionRecord {
+    let workspace = normalize_windows_path(&row.cwd);
+    let preview = compact(&row.preview);
+    let title = if row.title.trim().is_empty() {
+        if preview.is_empty() {
+            "(untitled)".to_string()
+        } else {
+            preview.clone()
+        }
+    } else {
+        row.title
+    };
+
+    SessionRecord {
+        source: "codex".to_string(),
+        short_id: row.id.chars().take(8).collect(),
+        id: row.id,
+        title,
+        preview,
+        created_at: row.created_at_ms.map(ms_to_rfc3339),
+        updated_at: row.updated_at_ms.map(ms_to_rfc3339),
+        message_count: 0,
+        total_tokens: 0,
+        model: String::new(),
+        workspace,
+        mode: String::new(),
+        path: normalize_windows_path(&row.rollout_path),
+        invalid_reason: None,
+    }
+}
+
+/// Strip the `\\?\` extended-length prefix Windows sometimes uses.
+fn normalize_windows_path(path: &str) -> String {
+    path.strip_prefix(r"\\?\")
+        .unwrap_or(path)
+        .to_string()
+}
+
+fn ms_to_rfc3339(millis: i64) -> String {
+    system_time_to_rfc3339(UNIX_EPOCH + std::time::Duration::from_millis(millis.max(0) as u64))
+}
+
 #[tauri::command]
 fn get_app_state() -> Result<AppState, String> {
     read_app_state()
@@ -223,6 +336,7 @@ fn set_deepseek_launcher(launcher: String) -> Result<AppState, String> {
 fn check_agent(source: Option<String>, deepseek_launcher: Option<String>) -> DeepseekStatus {
     let command = match source.as_deref().unwrap_or("deepseek") {
         "claude" => CLAUDE_CODE_COMMAND,
+        "codex" => CODEX_COMMAND,
         _ => deepseek_command(&normalize_deepseek_launcher(deepseek_launcher)),
     };
 
@@ -280,15 +394,17 @@ fn resume_session(
     workspace: Option<String>,
     launch_mode: Option<String>,
     deepseek_launcher: Option<String>,
+    prompt: Option<String>,
 ) -> Result<(), String> {
     let mode = launch_mode.unwrap_or_else(|| "new_terminal".to_string());
     if mode != "new_terminal" {
         return Err("V0.1 暂只支持打开新的系统终端。".to_string());
     }
 
-    let cwd = workspace_dir(workspace);
+    let cwd = workspace_dir(workspace.map(|w| normalize_windows_path(&w)));
     match source.as_deref().unwrap_or("deepseek") {
         "claude" => launch_resume(CLAUDE_CODE_COMMAND, "--resume", &session_id, &cwd),
+        "codex" => launch_codex_resume(&session_id, prompt.as_deref(), &cwd),
         _ => launch_resume(
             deepseek_command(&normalize_deepseek_launcher(deepseek_launcher)),
             "resume",
@@ -566,6 +682,10 @@ fn default_claude_projects_dir() -> PathBuf {
     home_dir().join(".claude").join("projects")
 }
 
+fn default_codex_db_path() -> PathBuf {
+    home_dir().join(".codex").join("state_5.sqlite")
+}
+
 fn app_state_path() -> PathBuf {
     home_dir()
         .join(".deepseek-session-manager")
@@ -587,6 +707,82 @@ fn workspace_dir(workspace: Option<String>) -> PathBuf {
     } else {
         home_dir()
     }
+}
+
+fn launch_codex_resume(
+    session_id: &str,
+    prompt: Option<&str>,
+    cwd: &Path,
+) -> Result<(), String> {
+    let prompt = prompt
+        .map(sanitize_single_line)
+        .filter(|value| !value.is_empty());
+
+    #[cfg(target_os = "windows")]
+    {
+        let cwd_text = cwd.to_string_lossy().to_string();
+        let cwd_text = cwd_text
+            .strip_prefix(r"\\?\")
+            .unwrap_or(&cwd_text)
+            .to_string();
+
+        let script = match prompt.as_deref() {
+            // PowerShell's call operator `&` ensures the .ps1 is invoked as
+            // a script, not parsed as a literal string.
+            Some(p) => format!(
+                "& {} resume {} {}",
+                CODEX_COMMAND,
+                powershell_quote(session_id),
+                powershell_quote(p)
+            ),
+            None => format!(
+                "& {} resume {}",
+                CODEX_COMMAND,
+                powershell_quote(session_id)
+            ),
+        };
+
+        match Command::new("wt")
+            .args([
+                "-d",
+                &cwd_text,
+                "powershell.exe",
+                "-NoExit",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &script,
+            ])
+            .spawn()
+        {
+            Ok(_) => Ok(()),
+            Err(_) => Command::new("powershell.exe")
+                .args(["-NoExit", "-ExecutionPolicy", "Bypass", "-Command", &script])
+                .current_dir(cwd)
+                .spawn()
+                .map(|_| ())
+                .map_err(|error| format!("启动 {CODEX_COMMAND} 失败: {error}")),
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut cmd = Command::new(CODEX_COMMAND);
+        cmd.arg("resume").arg(session_id);
+        if let Some(p) = prompt {
+            cmd.arg(p);
+        }
+        cmd.current_dir(cwd)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("启动 {CODEX_COMMAND} 失败: {error}"))
+    }
+}
+
+/// Collapse all whitespace into single spaces. Mirrors the frontend
+/// `normalizeSingleLine` so the prompt preview matches what actually runs.
+fn sanitize_single_line(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn launch_resume(
@@ -640,7 +836,7 @@ fn command_output(command: &str, arg: &str) -> std::io::Result<std::process::Out
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                &format!("{command} {arg}"),
+                &format!("& {command} {arg}"),
             ])
             .output()
     } else {

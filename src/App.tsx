@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import logoUrl from "./assets/logo.svg";
-import { buildResumeCommand, deepseekCommand } from "./lib/commands";
+import { buildResumeCommand, deepseekCommand, normalizeSingleLine } from "./lib/commands";
 import { setLocale, useLocale, useT, type Locale, type TFunction } from "./lib/i18n";
 import {
   compareUpdatedDesc,
@@ -49,6 +49,7 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(() => initialTheme());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quickReply, setQuickReply] = useState("");
   const settingsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -63,6 +64,11 @@ export default function App() {
   useEffect(() => {
     setActiveGroupKey(null);
   }, [source, groupBy, search]);
+
+  useEffect(() => {
+    // Clear quick-reply composer when the user jumps to another session or source.
+    setQuickReply("");
+  }, [selectedId, source]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -135,8 +141,8 @@ export default function App() {
     }
   }
 
-  async function copyCommand(session: SessionRecord) {
-    const command = resumeCommand(session, appState.deepseekLauncher);
+  async function copyCommand(session: SessionRecord, prompt?: string) {
+    const command = resumeCommand(session, appState.deepseekLauncher, prompt);
     await navigator.clipboard.writeText(command);
     setNotice(t("copied"));
   }
@@ -149,17 +155,30 @@ export default function App() {
     }
   }
 
-  async function resume(session: SessionRecord) {
+  async function resume(session: SessionRecord, prompt?: string) {
     setNotice(null);
+    const normalizedPrompt = prompt ? normalizeSingleLine(prompt) : "";
+    const effectivePrompt = session.source === "codex" && normalizedPrompt
+      ? normalizedPrompt
+      : undefined;
     try {
       await invoke("resume_session", {
         source: session.source,
         sessionId: session.id,
         workspace: session.workspace || null,
         launchMode: appState.launchMode,
-        deepseekLauncher: appState.deepseekLauncher
+        deepseekLauncher: appState.deepseekLauncher,
+        prompt: effectivePrompt ?? null
       });
-      setNotice(t("launched", { command: resumeCommand(session, appState.deepseekLauncher) }));
+      const finalCommand = resumeCommand(session, appState.deepseekLauncher, effectivePrompt);
+      setNotice(
+        effectivePrompt
+          ? t("quick_reply_launched", { command: finalCommand })
+          : t("launched", { command: finalCommand })
+      );
+      if (effectivePrompt) {
+        setQuickReply("");
+      }
     } catch (caught) {
       setError(toMessage(caught));
     }
@@ -330,6 +349,17 @@ export default function App() {
                 <small>Code</small>
               </span>
             </button>
+            <button
+              type="button"
+              className={`source-card ${source === "codex" ? "active" : ""}`}
+              onClick={() => setSource("codex")}
+            >
+              <span className="source-card-badge codex">O</span>
+              <span className="source-card-text">
+                <b>Codex</b>
+                <small>CLI</small>
+              </span>
+            </button>
           </div>
 
           <div className="sidebar-section">
@@ -456,10 +486,14 @@ export default function App() {
               deepseekLauncher={appState.deepseekLauncher}
               locale={locale}
               status={status}
+              quickReply={quickReply}
+              onQuickReplyChange={setQuickReply}
               t={t}
-              onResume={() => void resume(selected)}
+              onResume={() => void resume(selected, selected.source === "codex" ? quickReply : undefined)}
               onToggleFavorite={() => void toggleFavorite(selected)}
-              onCopyCommand={() => void copyCommand(selected)}
+              onCopyCommand={() =>
+                void copyCommand(selected, selected.source === "codex" ? quickReply : undefined)
+              }
               onOpenFolder={() => void openFolder(selected)}
             />
           ) : (
@@ -480,14 +514,22 @@ function SessionDetails(props: {
   deepseekLauncher: DeepseekLauncher;
   locale: Locale;
   status: DeepseekStatus | null;
+  quickReply: string;
+  onQuickReplyChange: (value: string) => void;
   t: TFunction;
   onResume: () => void;
   onToggleFavorite: () => void;
   onCopyCommand: () => void;
   onOpenFolder: () => void;
 }) {
-  const { session, t, locale, status } = props;
-  const command = resumeCommand(session, props.deepseekLauncher);
+  const { session, t, locale, status, quickReply, onQuickReplyChange } = props;
+  const isCodex = session.source === "codex";
+  const promptPreview = isCodex ? normalizeSingleLine(quickReply) : "";
+  const command = resumeCommand(
+    session,
+    props.deepseekLauncher,
+    isCodex && promptPreview ? promptPreview : undefined
+  );
   const workspaceMissing = Boolean(session.workspace) && !session.workspace.match(/^[A-Za-z]:\\/);
   const canResume = status?.available && !session.invalidReason;
   const [copied, setCopied] = useState(false);
@@ -496,6 +538,13 @@ function SessionDetails(props: {
     props.onCopyCommand();
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1400);
+  }
+
+  function handleQuickReplyKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" && canResume && promptPreview) {
+      event.preventDefault();
+      props.onResume();
+    }
   }
 
   return (
@@ -526,7 +575,9 @@ function SessionDetails(props: {
             disabled={!canResume}
           >
             <Icon name="play" />
-            <span>{t("action_launch")}</span>
+            <span>
+              {isCodex && promptPreview ? t("quick_reply_send") : t("action_launch")}
+            </span>
             <kbd className="kbd inverse">⏎</kbd>
           </button>
           <button type="button" className="btn-ghost" onClick={props.onOpenFolder}>
@@ -542,13 +593,38 @@ function SessionDetails(props: {
         </div>
       )}
 
+      {isCodex && (
+        <section className="quick-reply">
+          <div className="section-head">{t("quick_reply_label")}</div>
+          <div className="quick-reply-row">
+            <input
+              type="text"
+              value={quickReply}
+              onChange={(event) => onQuickReplyChange(event.target.value)}
+              onKeyDown={handleQuickReplyKeyDown}
+              placeholder={t("quick_reply_placeholder")}
+            />
+            <button
+              type="button"
+              className="btn-primary btn-primary-sm"
+              onClick={props.onResume}
+              disabled={!canResume || !promptPreview}
+            >
+              <span>{t("quick_reply_send")}</span>
+              <kbd className="kbd inverse">⏎</kbd>
+            </button>
+          </div>
+          <p className="hint">{t("quick_reply_hint")}</p>
+        </section>
+      )}
+
       <div className="hero-stats">
         <div className="stat">
-          <b>{session.messageCount}</b>
+          <b>{session.messageCount || "—"}</b>
           <span>{t("stat_messages")}</span>
         </div>
         <div className="stat">
-          <b>{formatTokenCount(session.totalTokens)}</b>
+          <b>{session.totalTokens ? formatTokenCount(session.totalTokens) : "—"}</b>
           <span>{t("stat_tokens")}</span>
         </div>
         <div className="stat">
@@ -599,7 +675,7 @@ function SessionDetails(props: {
             </>
           )}
           <dt>{t("label_file")}</dt>
-          <dd className="mono faint">{session.path}</dd>
+          <dd className="mono faint">{session.path || t("not_recorded")}</dd>
         </dl>
       </section>
 
@@ -826,8 +902,12 @@ function Icon({ name }: { name: IconName }) {
   }
 }
 
-function resumeCommand(session: SessionRecord, deepseekLauncher: DeepseekLauncher): string {
-  return buildResumeCommand(session.source, session.id, deepseekLauncher);
+function resumeCommand(
+  session: SessionRecord,
+  deepseekLauncher: DeepseekLauncher,
+  prompt?: string
+): string {
+  return buildResumeCommand(session.source, session.id, deepseekLauncher, prompt);
 }
 
 function toMessage(value: unknown): string {
@@ -854,15 +934,21 @@ function isFavorite(session: SessionRecord, favorites: Set<string>): boolean {
 }
 
 function sourceLabel(source: SessionSource, t: TFunction): string {
-  return source === "claude" ? t("source_claude") : t("source_deepseek");
+  if (source === "claude") return t("source_claude");
+  if (source === "codex") return t("source_codex");
+  return t("source_deepseek");
 }
 
 function sourceLabelShort(source: SessionSource): string {
-  return source === "claude" ? "Claude Code" : "DeepSeek TUI";
+  if (source === "claude") return "Claude Code";
+  if (source === "codex") return "Codex";
+  return "DeepSeek TUI";
 }
 
 function sourceCommand(source: SessionSource, deepseekLauncher: DeepseekLauncher = "cmd"): string {
-  return source === "claude" ? "claude" : deepseekCommand(deepseekLauncher);
+  if (source === "claude") return "claude";
+  if (source === "codex") return "codex.ps1";
+  return deepseekCommand(deepseekLauncher);
 }
 
 function formatRelative(value: string | null, locale: Locale, t: TFunction): string {
