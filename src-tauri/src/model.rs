@@ -4,6 +4,25 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RefreshResult {
+    pub source: String,
+    pub refreshed_at_ms: i64,
+    pub previous_count: u64,
+    pub current_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceState {
+    pub source: String,
+    pub last_refresh_at_ms: Option<i64>,
+    pub last_success_at_ms: Option<i64>,
+    pub last_error: Option<String>,
+    pub refresh_watermark: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionRecord {
     pub source: String,
     pub id: String,
@@ -28,6 +47,10 @@ pub struct AppState {
     pub launch_mode: String,
     #[serde(default = "default_deepseek_launcher")]
     pub deepseek_launcher: String,
+    #[serde(default = "default_auto_refresh_enabled")]
+    pub auto_refresh_enabled: bool,
+    #[serde(default = "default_auto_refresh_interval_minutes")]
+    pub auto_refresh_interval_minutes: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -89,4 +112,12 @@ pub enum ShellWrap {
 
 pub fn default_deepseek_launcher() -> String {
     "cmd".to_string()
+}
+
+pub fn default_auto_refresh_enabled() -> bool {
+    true
+}
+
+pub fn default_auto_refresh_interval_minutes() -> u64 {
+    5
 }

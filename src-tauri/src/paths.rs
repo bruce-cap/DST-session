@@ -19,9 +19,15 @@ pub fn default_codex_db_path() -> PathBuf {
 }
 
 pub fn app_state_path() -> PathBuf {
-    home_dir()
-        .join(".deepseek-session-manager")
-        .join("state.json")
+    app_data_dir().join("state.json")
+}
+
+pub fn app_index_path() -> PathBuf {
+    app_data_dir().join("index.sqlite")
+}
+
+fn app_data_dir() -> PathBuf {
+    home_dir().join(".deepseek-session-manager")
 }
 
 pub fn workspace_dir(workspace: Option<String>) -> PathBuf {

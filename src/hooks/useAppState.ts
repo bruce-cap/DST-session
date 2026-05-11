@@ -1,7 +1,7 @@
 /** Loads and mutates persisted app state through typed IPC. */
 
 import { useState } from "react";
-import { getAppState, setDeepseekLauncher, setFavorite } from "../api";
+import { getAppState, setAutoRefresh, setDeepseekLauncher, setFavorite } from "../api";
 import { favoriteKey, isFavorite } from "../lib/favorites";
 import { toMessage } from "../lib/format";
 import type { AppState, DeepseekLauncher, SessionRecord } from "../types";
@@ -9,7 +9,9 @@ import type { AppState, DeepseekLauncher, SessionRecord } from "../types";
 const defaultState: AppState = {
   favorites: [],
   launchMode: "new_terminal",
-  deepseekLauncher: "cmd"
+  deepseekLauncher: "cmd",
+  autoRefreshEnabled: true,
+  autoRefreshIntervalMinutes: 5
 };
 
 export function useAppState() {
@@ -48,5 +50,17 @@ export function useAppState() {
     }
   }
 
-  return { appState, setAppState, loadAppState, toggleFavorite, changeDeepseekLauncher, error, setError };
+  async function changeAutoRefresh(enabled: boolean, intervalMinutes: number): Promise<AppState | null> {
+    try {
+      const nextState = await setAutoRefresh({ enabled, intervalMinutes });
+      setAppState(nextState);
+      setError(null);
+      return nextState;
+    } catch (caught) {
+      setError(toMessage(caught));
+      return null;
+    }
+  }
+
+  return { appState, setAppState, loadAppState, toggleFavorite, changeDeepseekLauncher, changeAutoRefresh, error, setError };
 }

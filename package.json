@@ -1,14 +1,15 @@
 {
   "name": "deepseek-session-manager",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "version:sync": "node scripts/sync-version.mjs",
+    "dev": "node scripts/sync-version.mjs && vite",
+    "build": "node scripts/sync-version.mjs && tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "release": "tauri build --bundles nsis",
+    "tauri": "node scripts/sync-version.mjs && tauri",
+    "release": "node scripts/sync-version.mjs && tauri build --bundles nsis",
     "typecheck": "tsc --noEmit",
     "test": "vitest"
   },

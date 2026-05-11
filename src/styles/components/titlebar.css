@@ -225,6 +225,11 @@
   transform: translate(0, -2px);
 }
 
+.tooltip-target[data-tooltip-align="start"]::after {
+  left: 0;
+  transform: translate(0, -2px);
+}
+
 .tooltip-target:hover::after,
 .tooltip-target:focus-visible::after {
   opacity: 1;
@@ -234,6 +239,11 @@
 
 .tooltip-target[data-tooltip-align="end"]:hover::after,
 .tooltip-target[data-tooltip-align="end"]:focus-visible::after {
+  transform: translate(0, 0);
+}
+
+.tooltip-target[data-tooltip-align="start"]:hover::after,
+.tooltip-target[data-tooltip-align="start"]:focus-visible::after {
   transform: translate(0, 0);
 }
 

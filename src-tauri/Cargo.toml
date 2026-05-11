@@ -1,6 +1,6 @@
 [package]
 name = "deepseek-session-manager"
-version = "0.1.0"
+version = "0.2.1"
 description = "Local GUI for managing DeepSeek TUI sessions"
 authors = ["Cap"]
 edition = "2021"

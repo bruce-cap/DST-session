@@ -1,6 +1,6 @@
 //! Reads and writes the application-owned state file.
 
-use crate::model::{default_deepseek_launcher, AppState};
+use crate::model::{default_auto_refresh_enabled, default_auto_refresh_interval_minutes, default_deepseek_launcher, AppState};
 use crate::paths::app_state_path;
 use std::fs;
 
@@ -34,6 +34,8 @@ pub fn default_app_state() -> AppState {
         favorites: Vec::new(),
         launch_mode: "new_terminal".to_string(),
         deepseek_launcher: default_deepseek_launcher(),
+        auto_refresh_enabled: default_auto_refresh_enabled(),
+        auto_refresh_interval_minutes: default_auto_refresh_interval_minutes(),
     }
 }
 
@@ -42,6 +44,10 @@ pub fn normalize_deepseek_launcher(value: Option<String>) -> String {
         Some("ps1") => "ps1".to_string(),
         _ => default_deepseek_launcher(),
     }
+}
+
+pub fn normalize_auto_refresh_interval(value: u64) -> u64 {
+    value.clamp(1, 60)
 }
 
 #[cfg(test)]
@@ -53,6 +59,8 @@ mod tests {
         let state = default_app_state();
         assert_eq!(state.launch_mode, "new_terminal");
         assert_eq!(state.deepseek_launcher, "cmd");
+        assert!(state.auto_refresh_enabled);
+        assert_eq!(state.auto_refresh_interval_minutes, 5);
     }
 
     #[test]

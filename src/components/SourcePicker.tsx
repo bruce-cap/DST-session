@@ -1,7 +1,15 @@
 /** Renders the provider source selection cards. */
 
-import logoUrl from "../assets/logo.svg";
+import claudeLogo from "../assets/providers/claude.svg";
+import codexLogo from "../assets/providers/codex.svg";
+import deepseekLogo from "../assets/providers/deepseek.svg";
 import type { ProviderDescriptor, SessionSource } from "../types";
+
+const providerLogo: Record<ProviderDescriptor["iconKey"], string> = {
+  claude: claudeLogo,
+  codex: codexLogo,
+  deepseek: deepseekLogo
+};
 
 export function SourcePicker(props: {
   providers: ProviderDescriptor[];
@@ -10,19 +18,19 @@ export function SourcePicker(props: {
 }) {
   return (
     <div className="source-picker">
-      {props.providers.map((provider) => (
+      {props.providers.map((provider, index) => (
         <button
           key={provider.id}
           type="button"
-          className={`source-card ${props.source === provider.id ? "active" : ""}`}
+          className={`source-icon-button tooltip-target ${props.source === provider.id ? "active" : ""}`}
           onClick={() => props.onSourceChange(provider.id)}
+          aria-label={provider.shortName}
+          title={provider.shortName}
+          data-tooltip={provider.shortName}
+          data-tooltip-align={index === 0 ? "start" : index === props.providers.length - 1 ? "end" : "center"}
         >
-          <span className={`source-card-badge ${provider.badgeKey}`}>
-            {provider.badgeText ? provider.badgeText : <img src={logoUrl} alt="" />}
-          </span>
-          <span className="source-card-text">
-            <b>{provider.shortName.split(" ")[0]}</b>
-            <small>{provider.shortName.split(" ").slice(1).join(" ") || "CLI"}</small>
+          <span className={`source-icon-frame ${provider.badgeKey}`}>
+            <img src={providerLogo[provider.iconKey]} alt="" />
           </span>
         </button>
       ))}

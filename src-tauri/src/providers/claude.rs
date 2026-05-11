@@ -79,51 +79,59 @@ fn list_sessions(dir: PathBuf) -> Result<Vec<SessionRecord>, String> {
         };
 
         let project_path = project.path();
-        if !project_path.is_dir() {
-            continue;
-        }
-
-        let files = match fs::read_dir(&project_path) {
-            Ok(files) => files,
-            Err(error) => {
-                records.push(invalid_record(
-                    "claude",
-                    &file_stem(&project_path),
-                    &project_path.to_string_lossy(),
-                    format!("读取 Claude 会话目录失败: {error}"),
-                ));
-                continue;
-            }
-        };
-
-        for file in files {
-            let file = match file {
-                Ok(file) => file,
-                Err(error) => {
-                    records.push(invalid_record("claude", "", "", format!("读取 Claude 会话文件失败: {error}")));
-                    continue;
-                }
-            };
-
-            let path = file.path();
-            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
-                continue;
-            }
-
-            match parse_session_file(&path) {
-                Ok(record) => records.push(record),
-                Err(error) => records.push(invalid_record(
-                    "claude",
-                    &file_stem(&path),
-                    &path.to_string_lossy(),
-                    error,
-                )),
-            }
+        if project_path.is_dir() {
+            collect_jsonl_sessions(&project_path, &mut records);
         }
     }
 
     records.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
     Ok(records)
+}
+
+fn collect_jsonl_sessions(dir: &Path, records: &mut Vec<SessionRecord>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            records.push(invalid_record(
+                "claude",
+                &file_stem(dir),
+                &dir.to_string_lossy(),
+                format!("读取 Claude 会话目录失败: {error}"),
+            ));
+            return;
+        }
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                records.push(invalid_record("claude", "", "", format!("读取 Claude 会话文件失败: {error}")));
+                continue;
+            }
+        };
+
+        let path = entry.path();
+        if path.is_dir() {
+            if path.file_name().and_then(|name| name.to_str()) != Some("subagents") {
+                collect_jsonl_sessions(&path, records);
+            }
+            continue;
+        }
+        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+            continue;
+        }
+
+        match parse_session_file(&path) {
+            Ok(record) => records.push(record),
+            Err(error) => records.push(invalid_record(
+                "claude",
+                &file_stem(&path),
+                &path.to_string_lossy(),
+                error,
+            )),
+        }
+    }
 }
 
 fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {

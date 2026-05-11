@@ -3,6 +3,8 @@
 import type { SessionGroup } from "../types";
 import type { TFunction } from "../lib/i18n";
 
+const GROUP_LABEL_LIMIT = 10;
+
 export function GroupList(props: {
   groups: SessionGroup[];
   activeGroupKey: string | null;
@@ -27,12 +29,20 @@ export function GroupList(props: {
               props.onActiveGroupChange(props.activeGroupKey === group.key ? null : group.key);
               props.onSelectFirstInGroup(group);
             }}
-            title={group.key}
+            title={group.label}
           >
-            <span>{group.label}</span><em>{group.sessions.length}</em>
+            <span>{truncateGroupLabel(group.label)}</span><em>{group.sessions.length}</em>
           </button>
         ))}
       </div>
     </div>
   );
+}
+
+function truncateGroupLabel(label: string): string {
+  const chars = Array.from(label);
+  if (chars.length <= GROUP_LABEL_LIMIT) {
+    return label;
+  }
+  return `${chars.slice(0, GROUP_LABEL_LIMIT).join("")}...`;
 }

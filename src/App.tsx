@@ -62,9 +62,9 @@ export default function App() {
   return (
     <main className="app-shell">
       <TitleBar search={sessions.search} settingsOpen={settingsOpen} settingsRef={settingsRef} settings={
-        <SettingsMenu version={APP_VERSION} locale={locale} theme={theme} appState={app.appState} provider={provider} status={sessions.status} t={t} onLocaleChange={setLocale} onThemeChange={setTheme} onLauncherChange={(next) => void changeLauncher(next)} />
-      } t={t} onSearchChange={sessions.setSearch} onRefresh={() => void sessions.loadAll()} onToggleSettings={() => setSettingsOpen((open) => !open)} />
-      <MessageStack error={error} notice={notice} invalidCount={sessions.invalidCount} cliMissing={Boolean(sessions.status && !sessions.status.available)} provider={provider} t={t} />
+        <SettingsMenu version={APP_VERSION} locale={locale} theme={theme} appState={app.appState} provider={provider} status={sessions.status} t={t} onLocaleChange={setLocale} onThemeChange={setTheme} onLauncherChange={(next) => void changeLauncher(next)} onAutoRefreshChange={(enabled, interval) => void app.changeAutoRefresh(enabled, interval)} />
+      } t={t} onSearchChange={sessions.setSearch} onRefresh={() => void sessions.refreshFromSource()} onToggleSettings={() => setSettingsOpen((open) => !open)} />
+      <MessageStack error={error} notice={notice} invalidCount={sessions.invalidCount} cliMissing={Boolean(sessions.status && !sessions.status.available)} refreshing={sessions.refreshing} sourceState={sessions.sourceState} provider={provider} t={t} />
       <section className="workspace">
         <Sidebar providers={providersState.providers} source={source} groupBy={sessions.groupBy} groups={sessions.groups} activeGroupKey={sessions.activeGroupKey} total={sessions.filtered.length} t={t} onSourceChange={setSource} onGroupByChange={sessions.setGroupBy} onActiveGroupChange={sessions.setActiveGroupKey} onSelectFirstInGroup={(group) => sessions.setSelectedId(group.sessions[0]?.id ?? null)} />
         <SessionList loading={sessions.loading || providersState.loading} visibleGroups={sessions.visibleGroups} visibleSessions={sessions.visibleSessions} selected={sessions.selected} favoriteSet={sessions.favoriteSet} provider={provider} locale={locale} t={t} onSelect={sessions.setSelectedId} onToggleFavorite={(session) => void app.toggleFavorite(session)} />

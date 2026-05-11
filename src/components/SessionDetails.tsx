@@ -37,6 +37,7 @@ export function SessionDetails(props: {
   const workspaceMissing = Boolean(session.workspace) && !session.workspace.match(/^[A-Za-z]:\\/);
   const canResume = Boolean(props.status?.available && !session.invalidReason && capabilities?.resume);
   const favorite = isFavorite(session, props.favoriteSet);
+  const summary = session.preview || session.title || props.t("untitled");
 
   return (
     <div className="details">
@@ -52,8 +53,10 @@ export function SessionDetails(props: {
             </button>
           )}
         </div>
-        <h1 className="hero-title">{session.title || props.t("untitled")}</h1>
-        {session.preview && <p className="hero-preview">{session.preview}</p>}
+        <div className="hero-summary">
+          <span>{props.t("preview_label")}</span>
+          <p>{summary}</p>
+        </div>
         <div className="hero-actions">
           {capabilities?.resume && (
             <button type="button" className="btn-primary" onClick={() => props.onResume(session, promptPreview || undefined)} disabled={!canResume}>

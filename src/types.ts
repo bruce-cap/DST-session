@@ -26,10 +26,27 @@ export interface SessionGroup {
   sessions: SessionRecord[];
 }
 
+export interface RefreshResult {
+  source: SessionSource;
+  refreshedAtMs: number;
+  previousCount: number;
+  currentCount: number;
+}
+
+export interface SourceState {
+  source: SessionSource;
+  lastRefreshAtMs: number | null;
+  lastSuccessAtMs: number | null;
+  lastError: string | null;
+  refreshWatermark: string | null;
+}
+
 export interface AppState {
   favorites: string[];
   launchMode: "new_terminal" | "embedded";
   deepseekLauncher: DeepseekLauncher;
+  autoRefreshEnabled: boolean;
+  autoRefreshIntervalMinutes: number;
 }
 
 export interface DeepseekStatus {
