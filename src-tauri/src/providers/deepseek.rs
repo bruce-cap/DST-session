@@ -155,7 +155,9 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
         }),
         total_tokens: number_at(metadata, "total_tokens").unwrap_or(0),
         model: string_at(metadata, "model").unwrap_or_default(),
-        workspace: string_at(metadata, "workspace").unwrap_or_default(),
+        workspace: string_at(metadata, "workspace")
+            .map(|value| normalize_windows_path(&value))
+            .unwrap_or_default(),
         mode: string_at(metadata, "mode").unwrap_or_default(),
         path: path.to_string_lossy().to_string(),
         invalid_reason: None,

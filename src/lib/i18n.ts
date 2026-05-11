@@ -157,14 +157,16 @@ export const translations: Record<Locale, Dict> = { zh, en };
 export type TParams = Record<string, string | number>;
 export type TFunction = (key: TranslationKey, params?: TParams) => string;
 
-const STORAGE_KEY = "deepseek-session-manager-locale";
+const STORAGE_KEY = "agent-session-manager-locale";
+const LEGACY_STORAGE_KEY = "deepseek-session-manager-locale";
 const listeners = new Set<() => void>();
 let currentLocale: Locale = detectInitialLocale();
 
 function detectInitialLocale(): Locale {
   if (typeof localStorage !== "undefined") {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
     if (saved === "zh" || saved === "en") {
+      localStorage.setItem(STORAGE_KEY, saved);
       return saved;
     }
   }
@@ -185,6 +187,7 @@ export function setLocale(next: Locale): void {
   currentLocale = next;
   if (typeof localStorage !== "undefined") {
     localStorage.setItem(STORAGE_KEY, next);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   }
   if (typeof document !== "undefined") {
     document.documentElement.lang = localeToBcp47(next);

@@ -8,6 +8,7 @@ src-tauri/gen/
 .vscode/
 .idea/
 .deepseek/
+.agent-session-manager/
 .deepseek-session-manager/
 sessions/
 *.log

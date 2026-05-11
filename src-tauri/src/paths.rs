@@ -2,6 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
+const APP_DATA_DIR_NAME: &str = ".agent-session-manager";
+const LEGACY_APP_DATA_DIR_NAME: &str = ".deepseek-session-manager";
+
 pub fn home_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
@@ -27,7 +30,18 @@ pub fn app_index_path() -> PathBuf {
 }
 
 fn app_data_dir() -> PathBuf {
-    home_dir().join(".deepseek-session-manager")
+    let home = home_dir();
+    let current = home.join(APP_DATA_DIR_NAME);
+    if current.exists() {
+        return current;
+    }
+
+    let legacy = home.join(LEGACY_APP_DATA_DIR_NAME);
+    if legacy.exists() {
+        return legacy;
+    }
+
+    current
 }
 
 pub fn workspace_dir(workspace: Option<String>) -> PathBuf {
@@ -44,7 +58,40 @@ pub fn workspace_dir(workspace: Option<String>) -> PathBuf {
 }
 
 pub fn normalize_windows_path(path: &str) -> String {
-    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
+    let stripped = path.strip_prefix(r"\\?\").unwrap_or(path).trim();
+    let mut normalized = if is_windows_drive_path(stripped) {
+        stripped.replace('/', "\\")
+    } else {
+        stripped.to_string()
+    };
+
+    if is_windows_drive_path(&normalized) {
+        let drive = normalized[0..1].to_ascii_uppercase();
+        normalized.replace_range(0..1, &drive);
+        normalized = trim_trailing_windows_separators(&normalized);
+    }
+
+    normalized
+}
+
+fn is_windows_drive_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
+fn trim_trailing_windows_separators(path: &str) -> String {
+    if path.len() <= 3 {
+        return if path.ends_with('\\') {
+            path.to_string()
+        } else {
+            format!("{path}\\")
+        };
+    }
+
+    path.trim_end_matches(['\\', '/']).to_string()
 }
 
 pub fn file_stem(path: &Path) -> String {
@@ -64,6 +111,14 @@ mod tests {
         let once = normalize_windows_path(value);
         let twice = normalize_windows_path(&once);
         assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn normalize_windows_path_uppercases_drive_and_trims_trailing_slashes() {
+        assert_eq!(
+            normalize_windows_path(r"c:/Users/Cap/Desktop/dst-session/"),
+            r"C:\Users\Cap\Desktop\dst-session"
+        );
     }
 
     #[test]

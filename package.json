@@ -1,6 +1,6 @@
 {
-  "name": "deepseek-session-manager",
-  "version": "0.2.1",
+  "name": "agent-session-manager",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "scripts": {

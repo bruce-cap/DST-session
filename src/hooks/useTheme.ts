@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import type { ThemeMode } from "../types";
 
-const STORAGE_KEY = "deepseek-session-manager-theme";
+const STORAGE_KEY = "agent-session-manager-theme";
+const LEGACY_STORAGE_KEY = "deepseek-session-manager-theme";
 
 export function useTheme(): [ThemeMode, (value: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void] {
   const [theme, setTheme] = useState<ThemeMode>(() => initialTheme());
@@ -11,14 +12,16 @@ export function useTheme(): [ThemeMode, (value: ThemeMode | ((current: ThemeMode
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem(STORAGE_KEY, theme);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   }, [theme]);
 
   return [theme, setTheme];
 }
 
 function initialTheme(): ThemeMode {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  const saved = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
   if (saved === "light" || saved === "dark") {
+    localStorage.setItem(STORAGE_KEY, saved);
     return saved;
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

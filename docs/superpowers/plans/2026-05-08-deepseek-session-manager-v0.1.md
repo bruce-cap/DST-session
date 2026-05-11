@@ -1,4 +1,4 @@
-# DeepSeek Session Manager V0.1 Implementation Plan
+# Agent Session Manager V0.1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -109,7 +109,7 @@ resume_session(session_id: String, workspace?: String, launch_mode?: String) -> 
 
 - [ ] **Step 2: Keep original sessions read-only**
 
-Only `get_app_state` and `set_favorite` write to `%USERPROFILE%\.deepseek-session-manager\state.json`. Do not write to `%USERPROFILE%\.deepseek\sessions`.
+Only `get_app_state` and `set_favorite` write to `%USERPROFILE%\.agent-session-manager\state.json`. Do not write to `%USERPROFILE%\.deepseek\sessions`.
 
 - [ ] **Step 3: Verify Rust compilation**
 

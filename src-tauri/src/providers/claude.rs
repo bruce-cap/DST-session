@@ -193,7 +193,9 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
             updated_at = Some(timestamp);
         }
         if workspace.is_empty() {
-            workspace = string_at(&json, "cwd").unwrap_or_default();
+            workspace = string_at(&json, "cwd")
+                .map(|value| normalize_windows_path(&value))
+                .unwrap_or_default();
         }
         if mode.is_empty() {
             mode = string_at(&json, "permissionMode").unwrap_or_default();
@@ -240,6 +242,7 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
             .and_then(Path::file_name)
             .and_then(|name| name.to_str())
             .map(decode_claude_project_dir)
+            .map(|value| normalize_windows_path(&value))
             .unwrap_or_default();
     }
 

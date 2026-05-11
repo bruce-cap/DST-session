@@ -50,7 +50,7 @@ describe("i18n", () => {
   it("persists locale switches through setLocale", () => {
     setLocale("en");
     expect(getLocale()).toBe("en");
-    expect(localStorage.getItem("deepseek-session-manager-locale")).toBe("en");
+    expect(localStorage.getItem("agent-session-manager-locale")).toBe("en");
   });
 
   it("keeps Chinese and English dictionaries in sync", () => {

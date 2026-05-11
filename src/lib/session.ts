@@ -70,10 +70,11 @@ export function groupSessions(
 
   for (const session of sorted) {
     const { key, label } = getGroupKey(session, groupBy, favorites);
-    if (!grouped.has(key)) {
-      grouped.set(key, { key, label, sessions: [] });
+    const mapKey = groupBy === "workspace" ? workspaceLookupKey(key) : key;
+    if (!grouped.has(mapKey)) {
+      grouped.set(mapKey, { key, label, sessions: [] });
     }
-    grouped.get(key)?.sessions.push(session);
+    grouped.get(mapKey)?.sessions.push(session);
   }
 
   return [...grouped.values()].sort((left, right) => {
@@ -113,7 +114,7 @@ export function getGroupKey(
     return { key: "all", label: "全部会话" };
   }
 
-  const key = session.workspace || "(no workspace)";
+  const key = normalizeWorkspacePath(session.workspace || "(no workspace)");
   return { key, label: workspaceLeafName(key) };
 }
 
@@ -223,6 +224,33 @@ function workspaceLeafName(path: string): string {
   const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
   const leaf = normalized.split("/").pop();
   return leaf || path;
+}
+
+function normalizeWorkspacePath(path: string): string {
+  if (path === "(no workspace)") {
+    return path;
+  }
+
+  let normalized = path.trim().replace(/^\\\\\?\\/, "");
+  if (/^[A-Za-z]:[\\/]/.test(normalized)) {
+    normalized = `${normalized[0].toUpperCase()}${normalized.slice(1).replaceAll("/", "\\")}`;
+    return trimTrailingSeparators(normalized);
+  }
+
+  return normalized.replace(/[/\\]+$/, "") || path;
+}
+
+function workspaceLookupKey(path: string): string {
+  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\")
+    ? path.toLocaleLowerCase()
+    : path;
+}
+
+function trimTrailingSeparators(path: string): string {
+  if (/^[A-Za-z]:\\?$/.test(path)) {
+    return path.endsWith("\\") ? path : `${path}\\`;
+  }
+  return path.replace(/[\\/]+$/, "");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

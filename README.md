@@ -1,4 +1,4 @@
-# DeepSeek Session Manager
+# Agent Session Manager
 
 A lightweight local desktop app for browsing, filtering, and resuming agent CLI sessions from DeepSeek TUI, Claude Code, and Codex.
 
@@ -31,7 +31,7 @@ Codex also supports quick reply: type a single-line prompt in the detail panel a
 
 ## Safety Model
 
-Version `0.1.0` treats agent session files as read-only.
+The current version treats agent session files as read-only.
 
 The app reads:
 
@@ -44,8 +44,10 @@ The app reads:
 The app writes only its own state file for favorites and launch settings:
 
 ```text
-%USERPROFILE%\.deepseek-session-manager\state.json
+%USERPROFILE%\.agent-session-manager\state.json
 ```
+
+If you already used the old DeepSeek Session Manager name, the app keeps reading the legacy `%USERPROFILE%\.deepseek-session-manager` directory when it exists, so existing favorites and settings are not lost during the rename.
 
 UI preferences such as language and theme are stored in browser local storage inside the Tauri WebView.
 
@@ -108,7 +110,7 @@ pnpm release
 The debug binary is generated at:
 
 ```text
-src-tauri\target\debug\deepseek-session-manager.exe
+src-tauri\target\debug\agent-session-manager.exe
 ```
 
 ## Project Structure
@@ -135,7 +137,7 @@ src-tauri/
 
 - The app is primarily focused on Windows.
 - Resume launches in a new system terminal. Embedded terminal support is not implemented.
-- Session archive, delete, rename, local notes, and AI-generated summaries are intentionally left out of `0.1.0`.
+- Session archive, delete, rename, local notes, and AI-generated summaries are intentionally left out for now.
 - Source paths are currently the default CLI locations.
 
 ## Roadmap

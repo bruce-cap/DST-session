@@ -1,4 +1,4 @@
-# DeepSeek Session Manager
+# Agent Session Manager
 
 一个用于浏览、筛选和快速恢复本地 Agent CLI 会话的轻量桌面应用，当前支持 DeepSeek TUI、Claude Code 和 Codex。
 
@@ -31,7 +31,7 @@ Codex 还支持快速回复：在详情面板输入单行 prompt 后，可以直
 
 ## 安全模型
 
-`0.1.0` 版本默认把 Agent 会话文件当作只读数据。
+当前版本默认把 Agent 会话文件当作只读数据。
 
 应用读取：
 
@@ -44,8 +44,10 @@ Codex 还支持快速回复：在详情面板输入单行 prompt 后，可以直
 应用只会把收藏和启动配置写入自己的状态文件：
 
 ```text
-%USERPROFILE%\.deepseek-session-manager\state.json
+%USERPROFILE%\.agent-session-manager\state.json
 ```
+
+如果你之前已经用过旧名称 DeepSeek Session Manager，只要旧的 `%USERPROFILE%\.deepseek-session-manager` 目录存在，应用会继续读取它，避免改名后丢失收藏和设置。
 
 语言和主题等 UI 偏好会保存在 Tauri WebView 内的浏览器 local storage 中。
 
@@ -108,7 +110,7 @@ pnpm release
 调试版程序会生成到：
 
 ```text
-src-tauri\target\debug\deepseek-session-manager.exe
+src-tauri\target\debug\agent-session-manager.exe
 ```
 
 ## 项目结构
@@ -135,7 +137,7 @@ src-tauri/
 
 - 当前主要面向 Windows。
 - 恢复会话时会打开新的系统终端，暂未实现内嵌终端。
-- `0.1.0` 暂不提供归档、删除、重命名、本地备注和 AI 摘要功能。
+- 暂不提供归档、删除、重命名、本地备注和 AI 摘要功能。
 - 会话来源路径目前使用各 CLI 的默认位置。
 
 ## 后续计划

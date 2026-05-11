@@ -1,5 +1,5 @@
 /*
- * DeepSeek Session Manager — v3 design language
+ * Agent Session Manager — v3 design language
  *
  * References:
  *   — Linear (workspace hierarchy, serif display titles)
@@ -1141,11 +1141,17 @@ kbd {
   color: var(--ink-3);
 }
 
-.model-tag {
+.model-tag,
+.token-tag {
   color: var(--ink-3);
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: -0.01em;
+}
+
+.token-tag {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .dot {

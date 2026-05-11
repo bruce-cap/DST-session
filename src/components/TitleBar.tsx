@@ -20,7 +20,7 @@ export function TitleBar(props: {
     <header className="titlebar">
       <div className="brand">
         <div className="brand-mark"><img src={logoUrl} alt="" /></div>
-        <div className="brand-text"><strong>Session Manager</strong><span>DeepSeek · Claude Code</span></div>
+        <div className="brand-text"><strong>Agent Session Manager</strong><span>DeepSeek · Claude Code · Codex</span></div>
       </div>
       <div className="search-input titlebar-search">
         <Icon name="search" />

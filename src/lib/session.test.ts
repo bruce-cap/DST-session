@@ -101,6 +101,28 @@ describe("session helpers", () => {
     ]);
   });
 
+  it("merges Windows workspace groups that only differ by path casing", () => {
+    const sessions = [
+      sampleSession({
+        id: "lower-drive",
+        workspace: "c:\\Users\\Cap\\Desktop\\dst-session",
+        updatedAt: "2026-05-08T12:00:00Z"
+      }),
+      sampleSession({
+        id: "upper-drive",
+        workspace: "C:\\Users\\Cap\\Desktop\\dst-session",
+        updatedAt: "2026-05-08T10:00:00Z"
+      })
+    ];
+
+    const groups = groupSessions(sessions, "workspace", new Set());
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].key).toBe("C:\\Users\\Cap\\Desktop\\dst-session");
+    expect(groups[0].label).toBe("dst-session");
+    expect(groups[0].sessions).toHaveLength(2);
+  });
+
   it("uses the last workspace directory as the visible group label", () => {
     expect(
       getGroupKey(
@@ -111,6 +133,16 @@ describe("session helpers", () => {
     ).toEqual({
       key: "C:\\Users\\Example\\Desktop\\Free-BAI-main",
       label: "Free-BAI-main"
+    });
+    expect(
+      getGroupKey(
+        sampleSession({ workspace: "c:/Users/Cap/Desktop/dst-session/" }),
+        "workspace",
+        new Set()
+      )
+    ).toEqual({
+      key: "C:\\Users\\Cap\\Desktop\\dst-session",
+      label: "dst-session"
     });
   });
 
