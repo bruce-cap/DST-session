@@ -33,7 +33,7 @@ export function SessionDetails(props: {
   const session = props.session;
   const capabilities = props.provider?.capabilities;
   const promptPreview = capabilities?.quickReply ? normalizeSingleLine(props.quickReply) : "";
-  const command = buildResumeCommand(session.source, session.id, props.appState.deepseekLauncher, promptPreview || undefined);
+  const command = buildResumeCommand(session.source, session.id, props.appState.providerLaunchers[session.source], promptPreview || undefined);
   const workspaceMissing = Boolean(session.workspace) && !session.workspace.match(/^[A-Za-z]:\\/);
   const canResume = Boolean(props.status?.available && !session.invalidReason && capabilities?.resume);
   const favorite = isFavorite(session, props.favoriteSet);
@@ -83,7 +83,11 @@ export function SessionDetails(props: {
         <div className="stat"><b>{session.model ? modelShort(session.model) : "—"}</b><span>model</span></div>
       </div>
 
-      {capabilities?.copyCommand && <CommandTerminal command={command} t={props.t} onCopy={() => props.onCopyCommand(session, promptPreview || undefined)} />}
+      {capabilities?.copyCommand && (
+        <>
+          <CommandTerminal command={command} t={props.t} onCopy={() => props.onCopyCommand(session, promptPreview || undefined)} />
+        </>
+      )}
 
       <section className="detail-section">
         <div className="section-head">{props.t("label_workspace")}</div>

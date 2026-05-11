@@ -44,9 +44,10 @@ pub struct SessionRecord {
 #[serde(rename_all = "camelCase")]
 pub struct AppState {
     pub favorites: Vec<String>,
-    pub launch_mode: String,
     #[serde(default = "default_deepseek_launcher")]
     pub deepseek_launcher: String,
+    #[serde(default = "default_provider_launchers")]
+    pub provider_launchers: std::collections::BTreeMap<String, String>,
     #[serde(default = "default_auto_refresh_enabled")]
     pub auto_refresh_enabled: bool,
     #[serde(default = "default_auto_refresh_interval_minutes")]
@@ -112,6 +113,14 @@ pub enum ShellWrap {
 
 pub fn default_deepseek_launcher() -> String {
     "cmd".to_string()
+}
+
+pub fn default_provider_launchers() -> std::collections::BTreeMap<String, String> {
+    std::collections::BTreeMap::from([
+        ("deepseek".to_string(), "cmd".to_string()),
+        ("claude".to_string(), "cmd".to_string()),
+        ("codex".to_string(), "ps1".to_string()),
+    ])
 }
 
 pub fn default_auto_refresh_enabled() -> bool {

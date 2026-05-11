@@ -50,7 +50,10 @@ mod tests {
 
     #[test]
     fn string_at_reads_string_values() {
-        assert_eq!(string_at(&json!({ "name": "cap" }), "name"), Some("cap".to_string()));
+        assert_eq!(
+            string_at(&json!({ "name": "cap" }), "name"),
+            Some("cap".to_string())
+        );
     }
 
     #[test]

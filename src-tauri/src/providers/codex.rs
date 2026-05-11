@@ -1,9 +1,14 @@
 //! Provides Codex SQLite session listing and quick-reply resume planning.
 
-use super::{status_for_command, AgentCheckContext, Provider, ResumeRequest, CODEX_COMMAND};
+use super::{
+    codex_command, launch_cwd, status_for_command, AgentCheckContext, Provider, ResumeRequest,
+    CODEX_PS1_COMMAND,
+};
 use crate::json_util::compact;
-use crate::model::{LaunchArg, LaunchPlan, ProviderCapabilities, ProviderDescriptor, SessionRecord, ShellWrap};
-use crate::paths::{default_codex_db_path, normalize_windows_path, workspace_dir};
+use crate::model::{
+    LaunchArg, LaunchPlan, ProviderCapabilities, ProviderDescriptor, SessionRecord, ShellWrap,
+};
+use crate::paths::{default_codex_db_path, normalize_windows_path};
 use crate::providers::deepseek::invalid_record;
 use crate::time::ms_to_rfc3339;
 use std::path::PathBuf;
@@ -19,11 +24,11 @@ impl Provider for CodexProvider {
             icon_key: "codex".to_string(),
             badge_key: "codex".to_string(),
             default_group_by: "workspace".to_string(),
-            command_label: CODEX_COMMAND.to_string(),
+            command_label: CODEX_PS1_COMMAND.to_string(),
             badge_text: "O".to_string(),
             capabilities: ProviderCapabilities {
                 quick_reply: true,
-                launcher_toggle: false,
+                launcher_toggle: true,
                 favorite: true,
                 open_session_folder: true,
                 resume: true,
@@ -36,27 +41,46 @@ impl Provider for CodexProvider {
         list_sessions(override_path.unwrap_or_else(default_codex_db_path))
     }
 
-    fn check_agent(&self, _context: AgentCheckContext) -> crate::model::DeepseekStatus {
-        status_for_command(CODEX_COMMAND)
+    fn check_agent(&self, context: AgentCheckContext) -> crate::model::DeepseekStatus {
+        let launcher = context.launcher.unwrap_or_else(|| "ps1".to_string());
+        status_for_command(codex_command(&launcher))
     }
 
     fn plan_resume(&self, request: ResumeRequest) -> Result<LaunchPlan, String> {
+        let launcher = request.launcher.unwrap_or_else(|| "ps1".to_string());
+        let command = codex_command(&launcher);
         let mut args = vec![
-            LaunchArg { value: "resume".to_string(), single_line: false, shell_quote: false },
-            LaunchArg { value: request.session_id, single_line: false, shell_quote: true },
+            LaunchArg {
+                value: "resume".to_string(),
+                single_line: false,
+                shell_quote: launcher == "ps1",
+            },
+            LaunchArg {
+                value: request.session_id,
+                single_line: false,
+                shell_quote: launcher == "ps1",
+            },
         ];
         if let Some(prompt) = request.prompt {
-            args.push(LaunchArg { value: prompt, single_line: true, shell_quote: true });
+            args.push(LaunchArg {
+                value: prompt,
+                single_line: true,
+                shell_quote: launcher == "ps1",
+            });
         }
 
         Ok(LaunchPlan {
-            program: CODEX_COMMAND.to_string(),
+            program: command.to_string(),
             args,
-            cwd: Some(workspace_dir(request.workspace.map(|w| normalize_windows_path(&w))).to_string_lossy().to_string()),
-            shell_wrap: ShellWrap::PowerShellScript,
+            cwd: launch_cwd(request.workspace.map(|w| normalize_windows_path(&w))),
+            shell_wrap: if launcher == "ps1" {
+                ShellWrap::PowerShellScript
+            } else {
+                ShellWrap::CmdStart
+            },
             prefer_windows_terminal: true,
-            error_command_label: CODEX_COMMAND.to_string(),
-            use_call_operator: true,
+            error_command_label: command.to_string(),
+            use_call_operator: launcher == "ps1",
         })
     }
 }
@@ -129,7 +153,11 @@ fn codex_record_from_row(row: CodexRow) -> SessionRecord {
     let workspace = normalize_windows_path(&row.cwd);
     let preview = compact(&row.preview);
     let title = if row.title.trim().is_empty() {
-        if preview.is_empty() { "(untitled)".to_string() } else { preview.clone() }
+        if preview.is_empty() {
+            "(untitled)".to_string()
+        } else {
+            preview.clone()
+        }
     } else {
         row.title
     };

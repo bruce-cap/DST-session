@@ -76,7 +76,7 @@ export function useSessions(source: SessionSource, appState: AppState, provider:
       if (records.length === 0 && !nextSourceState?.lastSuccessAtMs) {
         void refreshFromSource(false);
       }
-      void checkAgent({ source, deepseekLauncher: state.deepseekLauncher })
+      void checkAgent({ source, launcher: state.providerLaunchers[source] })
         .then((nextStatus) => {
           if (requestId === loadRequestId.current) {
             setStatus(nextStatus);
@@ -128,9 +128,18 @@ export function useSessions(source: SessionSource, appState: AppState, provider:
     }
   }
 
-  async function refreshStatus(nextState = appState): Promise<void> {
-    const nextStatus = await checkAgent({ source, deepseekLauncher: nextState.deepseekLauncher });
-    setStatus(nextStatus);
+  async function refreshStatus(nextState = appState, statusSource = source): Promise<void> {
+    const requestId = loadRequestId.current;
+    try {
+      const nextStatus = await checkAgent({ source: statusSource, launcher: nextState.providerLaunchers[statusSource] });
+      if (requestId === loadRequestId.current) {
+        setStatus(nextStatus);
+      }
+    } catch (caught) {
+      if (requestId === loadRequestId.current) {
+        setError(toMessage(caught));
+      }
+    }
   }
 
   async function openFolder(session: SessionRecord): Promise<void> {
@@ -148,9 +157,8 @@ export function useSessions(source: SessionSource, appState: AppState, provider:
       await resumeSession({
         source: session.source,
         sessionId: session.id,
-        workspace: session.workspace || null,
-        launchMode: appState.launchMode,
         deepseekLauncher: appState.deepseekLauncher,
+        launcher: appState.providerLaunchers[session.source],
         prompt: effectivePrompt ?? null
       });
       return { promptUsed: effectivePrompt };

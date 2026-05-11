@@ -23,6 +23,7 @@ fn main() {
             commands::get_app_state,
             commands::set_favorite,
             commands::set_deepseek_launcher,
+            commands::set_provider_launcher,
             commands::set_auto_refresh,
             commands::check_agent,
             commands::open_session_folder,

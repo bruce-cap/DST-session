@@ -7,14 +7,16 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn execute_plan(plan: LaunchPlan) -> Result<(), String> {
-    let cwd = plan.cwd.as_deref().map(PathBuf::from).unwrap_or_else(crate::paths::home_dir);
+    let cwd = plan
+        .cwd
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(crate::paths::home_dir);
     let cwd_text = normalize_windows_path(&cwd.to_string_lossy());
     let args = normalize_args(&plan.args);
 
-    if plan.prefer_windows_terminal {
-        if spawn_wt(&plan, &args, &cwd_text).is_ok() {
-            return Ok(());
-        }
+    if plan.prefer_windows_terminal && spawn_wt(&plan, &args, &cwd_text).is_ok() {
+        return Ok(());
     }
 
     match plan.shell_wrap {
@@ -23,7 +25,11 @@ pub fn execute_plan(plan: LaunchPlan) -> Result<(), String> {
     }
 }
 
-fn spawn_wt(plan: &LaunchPlan, args: &[LaunchArg], cwd_text: &str) -> std::io::Result<std::process::Child> {
+fn spawn_wt(
+    plan: &LaunchPlan,
+    args: &[LaunchArg],
+    cwd_text: &str,
+) -> std::io::Result<std::process::Child> {
     match plan.shell_wrap {
         ShellWrap::PowerShellScript => Command::new("wt")
             .args([
@@ -99,7 +105,11 @@ fn normalize_args(args: &[LaunchArg]) -> Vec<LaunchArg> {
             if arg.single_line && value.is_empty() {
                 None
             } else {
-                Some(LaunchArg { value, single_line: false, shell_quote: arg.shell_quote })
+                Some(LaunchArg {
+                    value,
+                    single_line: false,
+                    shell_quote: arg.shell_quote,
+                })
             }
         })
         .collect()

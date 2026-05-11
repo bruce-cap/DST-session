@@ -55,7 +55,10 @@ fn hide_console_window(command: &mut Command) {
 }
 
 fn output_with_timeout(mut command: Command, timeout: Duration) -> io::Result<Output> {
-    let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
     let started_at = Instant::now();
 
     loop {

@@ -13,8 +13,8 @@ import { useProviders } from "./hooks/useProviders";
 import { useSessions } from "./hooks/useSessions";
 import { useTheme } from "./hooks/useTheme";
 import { useTranslation } from "./hooks/useTranslation";
-import { buildResumeCommand } from "./lib/commands";
-import type { SessionSource } from "./types";
+import { buildResumeCommand, providerCommand } from "./lib/commands";
+import type { ProviderLauncher, SessionSource } from "./types";
 
 const APP_VERSION = __APP_VERSION__;
 
@@ -32,14 +32,16 @@ export default function App() {
   const app = useAppState();
   const sessions = useSessions(source, app.appState, provider, app.loadAppState);
   const error = providersState.error ?? app.error ?? sessions.error;
+  const activeLauncher = app.appState.providerLaunchers[source] ?? (source === "codex" ? "ps1" : "cmd");
+  const activeCommand = providerCommand(source, activeLauncher);
 
   useClickAway(settingsRef, settingsOpen, () => setSettingsOpen(false));
   useAutoDismiss(notice, () => setNotice(null));
 
   useEffect(() => setQuickReply(""), [sessions.selectedId, source]);
 
-  async function changeLauncher(next: typeof app.appState.deepseekLauncher) {
-    const nextState = await app.changeDeepseekLauncher(next);
+  async function changeLauncher(next: ProviderLauncher) {
+    const nextState = await app.changeProviderLauncher(source, next);
     if (nextState) await sessions.refreshStatus(nextState);
   }
 
@@ -48,23 +50,23 @@ export default function App() {
     setNotice(null);
     const result = await sessions.resume(session, prompt);
     if (!result) return;
-    const command = buildResumeCommand(session.source, session.id, app.appState.deepseekLauncher, result.promptUsed);
+    const command = buildResumeCommand(session.source, session.id, app.appState.providerLaunchers[session.source], result.promptUsed);
     setNotice(result.promptUsed ? t("quick_reply_launched", { command }) : t("launched", { command }));
     if (result.promptUsed) setQuickReply("");
   }
 
   async function copyCommand(session = sessions.selected, prompt?: string) {
     if (!session) return;
-    await navigator.clipboard.writeText(buildResumeCommand(session.source, session.id, app.appState.deepseekLauncher, prompt));
+    await navigator.clipboard.writeText(buildResumeCommand(session.source, session.id, app.appState.providerLaunchers[session.source], prompt));
     setNotice(t("copied"));
   }
 
   return (
     <main className="app-shell">
       <TitleBar search={sessions.search} settingsOpen={settingsOpen} settingsRef={settingsRef} settings={
-        <SettingsMenu version={APP_VERSION} locale={locale} theme={theme} appState={app.appState} provider={provider} status={sessions.status} t={t} onLocaleChange={setLocale} onThemeChange={setTheme} onLauncherChange={(next) => void changeLauncher(next)} onAutoRefreshChange={(enabled, interval) => void app.changeAutoRefresh(enabled, interval)} />
+        <SettingsMenu version={APP_VERSION} locale={locale} theme={theme} appState={app.appState} provider={provider} status={sessions.status} t={t} onLocaleChange={setLocale} onThemeChange={setTheme} onProviderLauncherChange={(next) => void changeLauncher(next)} onAutoRefreshChange={(enabled, interval) => void app.changeAutoRefresh(enabled, interval)} />
       } t={t} onSearchChange={sessions.setSearch} onRefresh={() => void sessions.refreshFromSource()} onToggleSettings={() => setSettingsOpen((open) => !open)} />
-      <MessageStack error={error} notice={notice} invalidCount={sessions.invalidCount} cliMissing={Boolean(sessions.status && !sessions.status.available)} refreshing={sessions.refreshing} sourceState={sessions.sourceState} provider={provider} t={t} />
+      <MessageStack error={error} notice={notice} invalidCount={sessions.invalidCount} cliMissing={Boolean(sessions.status && !sessions.status.available)} refreshing={sessions.refreshing} sourceState={sessions.sourceState} provider={provider} commandLabel={activeCommand} t={t} />
       <section className="workspace">
         <Sidebar providers={providersState.providers} source={source} groupBy={sessions.groupBy} groups={sessions.groups} activeGroupKey={sessions.activeGroupKey} total={sessions.filtered.length} t={t} onSourceChange={setSource} onGroupByChange={sessions.setGroupBy} onActiveGroupChange={sessions.setActiveGroupKey} onSelectFirstInGroup={(group) => sessions.setSelectedId(group.sessions[0]?.id ?? null)} />
         <SessionList loading={sessions.loading || providersState.loading} visibleGroups={sessions.visibleGroups} visibleSessions={sessions.visibleSessions} selected={sessions.selected} favoriteSet={sessions.favoriteSet} provider={provider} locale={locale} t={t} onSelect={sessions.setSelectedId} onToggleFavorite={(session) => void app.toggleFavorite(session)} />

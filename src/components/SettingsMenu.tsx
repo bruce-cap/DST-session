@@ -1,10 +1,10 @@
 /** Renders the settings popover and provider status information. */
 
-import type { AppState, DeepseekLauncher, ProviderDescriptor, ThemeMode } from "../types";
+import type { AppState, ProviderDescriptor, ProviderLauncher, ThemeMode } from "../types";
 import type { DeepseekStatus } from "../types";
 import type { Locale, TFunction } from "../lib/i18n";
 import { LocaleToggle } from "./LocaleToggle";
-import { LauncherToggle } from "./LauncherToggle";
+import { ProviderLaunchSettings } from "./ProviderLaunchSettings";
 
 export function SettingsMenu(props: {
   version: string;
@@ -16,10 +16,12 @@ export function SettingsMenu(props: {
   t: TFunction;
   onLocaleChange: (locale: Locale) => void;
   onThemeChange: (theme: ThemeMode | ((current: ThemeMode) => ThemeMode)) => void;
-  onLauncherChange: (launcher: DeepseekLauncher) => void;
+  onProviderLauncherChange: (launcher: ProviderLauncher) => void;
   onAutoRefreshChange: (enabled: boolean, intervalMinutes: number) => void;
 }) {
-  const command = props.provider?.commandLabel ?? "";
+  const source = props.provider?.id ?? "deepseek";
+  const launcher = props.appState.providerLaunchers[source] ?? (source === "codex" ? "ps1" : "cmd");
+  const command = props.provider ? commandLabel(props.provider.commandLabel, launcher) : "";
   const providerName = props.provider ? props.t(props.provider.displayNameKey) : "";
 
   return (
@@ -30,9 +32,8 @@ export function SettingsMenu(props: {
         <span>{props.t("settings_dark")}</span>
         <button type="button" className={`switch ${props.theme === "dark" ? "on" : ""}`} onClick={() => props.onThemeChange((current) => (current === "dark" ? "light" : "dark"))} aria-pressed={props.theme === "dark"}><i /></button>
       </div>
-      <div className="settings-note"><span>{props.t("settings_launch_mode")}</span><b>{props.t("settings_launch_mode_value")}</b></div>
       {props.provider?.capabilities.launcherToggle && (
-        <div className="settings-row"><span>{props.t("settings_deepseek_launcher")}</span><LauncherToggle value={props.appState.deepseekLauncher} onChange={props.onLauncherChange} /></div>
+        <ProviderLaunchSettings launcher={launcher} t={props.t} onLauncherChange={props.onProviderLauncherChange} />
       )}
       <div className="settings-row">
         <span>{props.t("settings_auto_refresh")}</span>
@@ -54,4 +55,11 @@ export function SettingsMenu(props: {
       <p>{props.t("settings_footer", { source: providerName })}</p>
     </div>
   );
+}
+
+function commandLabel(command: string, launcher: ProviderLauncher): string {
+  if (command.endsWith(".cmd") || command.endsWith(".ps1")) {
+    return command.replace(/\.(cmd|ps1)$/, `.${launcher}`);
+  }
+  return `${command}.${launcher}`;
 }

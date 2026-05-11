@@ -10,9 +10,11 @@ use std::path::PathBuf;
 
 pub const DEEPSEEK_CMD_COMMAND: &str = "deepseek.cmd";
 pub const DEEPSEEK_PS1_COMMAND: &str = "deepseek.ps1";
-pub const CLAUDE_CODE_COMMAND: &str = "claude.cmd";
+pub const CLAUDE_CMD_COMMAND: &str = "claude.cmd";
+pub const CLAUDE_PS1_COMMAND: &str = "claude.ps1";
 pub const CLAUDE_PREVIEW_COMMAND: &str = "claude";
-pub const CODEX_COMMAND: &str = "codex.ps1";
+pub const CODEX_CMD_COMMAND: &str = "codex.cmd";
+pub const CODEX_PS1_COMMAND: &str = "codex.ps1";
 pub const DEFAULT_SOURCE: &str = "deepseek";
 
 pub trait Provider: Send + Sync {
@@ -28,21 +30,24 @@ pub struct ProviderRegistry {
 
 #[derive(Debug, Clone)]
 pub struct AgentCheckContext {
-    pub deepseek_launcher: Option<String>,
+    pub launcher: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResumeRequest {
     pub session_id: String,
     pub workspace: Option<String>,
-    pub deepseek_launcher: Option<String>,
+    pub launcher: Option<String>,
     pub prompt: Option<String>,
 }
 
 impl ProviderRegistry {
     pub fn bootstrap() -> Self {
         let mut providers: BTreeMap<String, Box<dyn Provider>> = BTreeMap::new();
-        providers.insert(DEFAULT_SOURCE.to_string(), Box::new(deepseek::DeepseekProvider));
+        providers.insert(
+            DEFAULT_SOURCE.to_string(),
+            Box::new(deepseek::DeepseekProvider),
+        );
         providers.insert("claude".to_string(), Box::new(claude::ClaudeProvider));
         providers.insert("codex".to_string(), Box::new(codex::CodexProvider));
         Self { providers }
@@ -70,6 +75,30 @@ pub fn deepseek_command(launcher: &str) -> &'static str {
     } else {
         DEEPSEEK_CMD_COMMAND
     }
+}
+
+pub fn claude_command(launcher: &str) -> &'static str {
+    if launcher == "ps1" {
+        CLAUDE_PS1_COMMAND
+    } else {
+        CLAUDE_CMD_COMMAND
+    }
+}
+
+pub fn codex_command(launcher: &str) -> &'static str {
+    if launcher == "cmd" {
+        CODEX_CMD_COMMAND
+    } else {
+        CODEX_PS1_COMMAND
+    }
+}
+
+pub fn launch_cwd(workspace: Option<String>) -> Option<String> {
+    Some(
+        crate::paths::workspace_dir(workspace)
+            .to_string_lossy()
+            .to_string(),
+    )
 }
 
 pub fn status_for_command(command: &str) -> DeepseekStatus {

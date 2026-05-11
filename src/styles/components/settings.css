@@ -64,6 +64,11 @@
   letter-spacing: 0;
 }
 
+.settings-group {
+  display: grid;
+  gap: 3px;
+}
+
 .settings-row,
 .settings-note {
   display: flex;
@@ -101,6 +106,10 @@
   padding: 2px;
   border-radius: 6px;
   background: var(--hover);
+}
+
+.segmented.wide button {
+  min-width: 56px;
 }
 
 .segmented button {

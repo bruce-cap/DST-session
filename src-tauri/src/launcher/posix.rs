@@ -6,10 +6,22 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub fn execute_plan(plan: LaunchPlan) -> Result<(), String> {
-    let cwd = plan.cwd.as_deref().map(PathBuf::from).unwrap_or_else(crate::paths::home_dir);
+    let cwd = plan
+        .cwd
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(crate::paths::home_dir);
     let args = plan.args.into_iter().filter_map(|arg| {
-        let value = if arg.single_line { sanitize_single_line(&arg.value) } else { arg.value };
-        if value.is_empty() { None } else { Some(value) }
+        let value = if arg.single_line {
+            sanitize_single_line(&arg.value)
+        } else {
+            arg.value
+        };
+        if value.is_empty() {
+            None
+        } else {
+            Some(value)
+        }
     });
 
     Command::new(&plan.program)

@@ -2,15 +2,32 @@
 
 use crate::index;
 use crate::launcher;
-use crate::model::{AppState, DeepseekStatus, ProviderDescriptor, RefreshResult, SessionRecord, SourceState};
+use crate::model::{
+    AppState, DeepseekStatus, ProviderDescriptor, RefreshResult, SessionRecord, SourceState,
+};
 use crate::providers::{AgentCheckContext, ProviderRegistry, ResumeRequest};
-use crate::state::{normalize_auto_refresh_interval, normalize_deepseek_launcher, read_app_state, write_app_state};
+use crate::state::{
+    normalize_auto_refresh_interval, normalize_provider_launcher, read_app_state, write_app_state,
+};
+use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use tauri::State;
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResumeSessionRequest {
+    pub source: Option<String>,
+    pub session_id: String,
+    pub deepseek_launcher: Option<String>,
+    pub launcher: Option<String>,
+    pub prompt: Option<String>,
+}
+
 #[tauri::command]
-pub fn list_providers(registry: State<'_, ProviderRegistry>) -> Result<Vec<ProviderDescriptor>, String> {
+pub fn list_providers(
+    registry: State<'_, ProviderRegistry>,
+) -> Result<Vec<ProviderDescriptor>, String> {
     Ok(registry.descriptors())
 }
 
@@ -55,7 +72,11 @@ pub fn get_app_state() -> Result<AppState, String> {
 pub fn set_favorite(session_id: String, favorite: bool) -> Result<AppState, String> {
     let mut state = read_app_state()?;
     let mut favorites: BTreeSet<String> = state.favorites.into_iter().collect();
-    if favorite { favorites.insert(session_id); } else { favorites.remove(&session_id); }
+    if favorite {
+        favorites.insert(session_id);
+    } else {
+        favorites.remove(&session_id);
+    }
     state.favorites = favorites.into_iter().collect();
     write_app_state(&state)?;
     Ok(state)
@@ -63,10 +84,21 @@ pub fn set_favorite(session_id: String, favorite: bool) -> Result<AppState, Stri
 
 #[tauri::command]
 pub fn set_deepseek_launcher(launcher: String) -> Result<AppState, String> {
+    set_provider_launcher("deepseek".to_string(), launcher)
+}
+
+#[tauri::command]
+pub fn set_provider_launcher(source: String, launcher: String) -> Result<AppState, String> {
     let mut state = read_app_state()?;
-    state.deepseek_launcher = normalize_deepseek_launcher(Some(launcher));
+    let launcher = normalize_provider_launcher(&source, Some(launcher));
+    state
+        .provider_launchers
+        .insert(source.clone(), launcher.clone());
+    if source == "deepseek" {
+        state.deepseek_launcher = launcher;
+    }
     write_app_state(&state)?;
-    Ok(state)
+    read_app_state()
 }
 
 #[tauri::command]
@@ -83,10 +115,15 @@ pub fn check_agent(
     registry: State<'_, ProviderRegistry>,
     source: Option<String>,
     deepseek_launcher: Option<String>,
+    launcher: Option<String>,
 ) -> DeepseekStatus {
+    let source = source.unwrap_or_else(|| crate::providers::DEFAULT_SOURCE.to_string());
+    let launcher = launcher
+        .or(deepseek_launcher)
+        .map(|value| normalize_provider_launcher(&source, Some(value)));
     registry
-        .resolve_or_default(source.as_deref())
-        .check_agent(AgentCheckContext { deepseek_launcher })
+        .resolve_or_default(Some(&source))
+        .check_agent(AgentCheckContext { launcher })
 }
 
 #[tauri::command]
@@ -97,21 +134,26 @@ pub fn open_session_folder(path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn resume_session(
     registry: State<'_, ProviderRegistry>,
-    source: Option<String>,
-    session_id: String,
-    workspace: Option<String>,
-    launch_mode: Option<String>,
-    deepseek_launcher: Option<String>,
-    prompt: Option<String>,
+    request: ResumeSessionRequest,
 ) -> Result<(), String> {
-    if launch_mode.unwrap_or_else(|| "new_terminal".to_string()) != "new_terminal" {
-        return Err("V0.1 暂只支持打开新的系统终端。".to_string());
+    let source = request
+        .source
+        .unwrap_or_else(|| crate::providers::DEFAULT_SOURCE.to_string());
+    let launcher = request
+        .launcher
+        .or(request.deepseek_launcher)
+        .map(|value| normalize_provider_launcher(&source, Some(value)));
+    let session = index::read_session(&source, &request.session_id)?;
+    if let Some(reason) = session.invalid_reason.as_deref() {
+        return Err(reason.to_string());
     }
-    let plan = registry.resolve_or_default(source.as_deref()).plan_resume(ResumeRequest {
-        session_id,
-        workspace,
-        deepseek_launcher,
-        prompt,
-    })?;
+    let plan = registry
+        .resolve_or_default(Some(&source))
+        .plan_resume(ResumeRequest {
+            session_id: request.session_id,
+            workspace: Some(session.workspace),
+            launcher,
+            prompt: request.prompt,
+        })?;
     launcher::execute_plan(plan)
 }

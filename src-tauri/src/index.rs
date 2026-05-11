@@ -19,24 +19,7 @@ pub fn read_sessions(source: &str) -> Result<Vec<SessionRecord>, String> {
         .map_err(|error| format!("准备读取 session 索引失败: {error}"))?;
 
     let rows = stmt
-        .query_map([source], |row| {
-            Ok(SessionRecord {
-                source: row.get(0)?,
-                id: row.get(1)?,
-                short_id: row.get(2)?,
-                title: row.get(3)?,
-                preview: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                message_count: row.get::<_, i64>(7)?.max(0) as u64,
-                total_tokens: row.get::<_, i64>(8)?.max(0) as u64,
-                model: row.get(9)?,
-                workspace: row.get(10)?,
-                mode: row.get(11)?,
-                path: row.get(12)?,
-                invalid_reason: row.get(13)?,
-            })
-        })
+        .query_map([source], session_record_from_row)
         .map_err(|error| format!("读取 session 索引失败: {error}"))?;
 
     let mut records = Vec::new();
@@ -44,6 +27,21 @@ pub fn read_sessions(source: &str) -> Result<Vec<SessionRecord>, String> {
         records.push(row.map_err(|error| format!("读取 session 索引行失败: {error}"))?);
     }
     Ok(records)
+}
+
+pub fn read_session(source: &str, session_id: &str) -> Result<SessionRecord, String> {
+    let conn = open_index()?;
+    conn.query_row(
+        "SELECT source, id, short_id, title, preview, created_at, updated_at,
+                message_count, total_tokens, model, workspace, mode, path, invalid_reason
+         FROM sessions
+         WHERE source = ?1 AND id = ?2 AND deleted_at_ms IS NULL",
+        params![source, session_id],
+        session_record_from_row,
+    )
+    .optional()
+    .map_err(|error| format!("读取 session 索引失败 {source}:{session_id}: {error}"))?
+    .ok_or_else(|| format!("未找到 session: {session_id}"))
 }
 
 pub fn refresh_source(source: &str, records: Vec<SessionRecord>) -> Result<RefreshResult, String> {
@@ -110,6 +108,25 @@ pub fn record_refresh_error(source: &str, error: &str) -> Result<(), String> {
     upsert_source_state(&conn, &state)
 }
 
+fn session_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRecord> {
+    Ok(SessionRecord {
+        source: row.get(0)?,
+        id: row.get(1)?,
+        short_id: row.get(2)?,
+        title: row.get(3)?,
+        preview: row.get(4)?,
+        created_at: row.get(5)?,
+        updated_at: row.get(6)?,
+        message_count: row.get::<_, i64>(7)?.max(0) as u64,
+        total_tokens: row.get::<_, i64>(8)?.max(0) as u64,
+        model: row.get(9)?,
+        workspace: row.get(10)?,
+        mode: row.get(11)?,
+        path: row.get(12)?,
+        invalid_reason: row.get(13)?,
+    })
+}
+
 fn open_index() -> Result<Connection, String> {
     let path = app_index_path();
     if let Some(parent) = path.parent() {
@@ -161,7 +178,11 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
     .map_err(|error| format!("初始化 session 索引 schema 失败: {error}"))
 }
 
-fn upsert_session(conn: &Connection, record: &SessionRecord, indexed_at_ms: i64) -> Result<(), String> {
+fn upsert_session(
+    conn: &Connection,
+    record: &SessionRecord,
+    indexed_at_ms: i64,
+) -> Result<(), String> {
     let (file_mtime_ms, file_size) = file_meta(&record.path);
     conn.execute(
         "INSERT INTO sessions (
@@ -206,7 +227,12 @@ fn upsert_session(conn: &Connection, record: &SessionRecord, indexed_at_ms: i64)
             indexed_at_ms,
         ],
     )
-    .map_err(|error| format!("写入 session 索引失败 {}:{}: {error}", record.source, record.id))?;
+    .map_err(|error| {
+        format!(
+            "写入 session 索引失败 {}:{}: {error}",
+            record.source, record.id
+        )
+    })?;
     Ok(())
 }
 
@@ -222,7 +248,10 @@ fn file_meta(path: &str) -> (Option<i64>, Option<i64>) {
     (mtime, Some(metadata.len() as i64))
 }
 
-fn read_source_state_from_conn(conn: &Connection, source: &str) -> Result<Option<SourceState>, String> {
+fn read_source_state_from_conn(
+    conn: &Connection,
+    source: &str,
+) -> Result<Option<SourceState>, String> {
     conn.query_row(
         "SELECT source, last_refresh_at_ms, last_success_at_ms, last_error, refresh_watermark
          FROM source_state

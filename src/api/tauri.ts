@@ -1,7 +1,7 @@
 /** Wraps Tauri IPC commands with typed frontend functions. */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { AppState, DeepseekLauncher, DeepseekStatus, ProviderDescriptor, RefreshResult, SessionRecord, SessionSource, SourceState } from "../types";
+import type { AppState, DeepseekLauncher, DeepseekStatus, ProviderDescriptor, ProviderLauncher, RefreshResult, SessionRecord, SessionSource, SourceState } from "../types";
 
 export function listProviders(): Promise<ProviderDescriptor[]> {
   return invoke<ProviderDescriptor[]>("list_providers");
@@ -38,11 +38,15 @@ export function setDeepseekLauncher(params: { launcher: DeepseekLauncher }): Pro
   return invoke<AppState>("set_deepseek_launcher", params);
 }
 
+export function setProviderLauncher(params: { source: SessionSource; launcher: ProviderLauncher }): Promise<AppState> {
+  return invoke<AppState>("set_provider_launcher", params);
+}
+
 export function setAutoRefresh(params: { enabled: boolean; intervalMinutes: number }): Promise<AppState> {
   return invoke<AppState>("set_auto_refresh", params);
 }
 
-export function checkAgent(params: { source?: SessionSource; deepseekLauncher?: DeepseekLauncher }): Promise<DeepseekStatus> {
+export function checkAgent(params: { source?: SessionSource; deepseekLauncher?: DeepseekLauncher; launcher?: ProviderLauncher }): Promise<DeepseekStatus> {
   return invoke<DeepseekStatus>("check_agent", params);
 }
 
@@ -53,10 +57,9 @@ export function openSessionFolder(params: { path: string }): Promise<void> {
 export function resumeSession(params: {
   source?: SessionSource;
   sessionId: string;
-  workspace?: string | null;
-  launchMode?: AppState["launchMode"];
   deepseekLauncher?: DeepseekLauncher;
+  launcher?: ProviderLauncher;
   prompt?: string | null;
 }): Promise<void> {
-  return invoke<void>("resume_session", params);
+  return invoke<void>("resume_session", { request: params });
 }

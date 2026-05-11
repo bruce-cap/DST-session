@@ -1,9 +1,14 @@
 //! Provides Claude JSONL session listing and resume planning.
 
-use super::{status_for_command, AgentCheckContext, Provider, ResumeRequest, CLAUDE_CODE_COMMAND, CLAUDE_PREVIEW_COMMAND};
+use super::{
+    claude_command, launch_cwd, status_for_command, AgentCheckContext, Provider, ResumeRequest,
+    CLAUDE_PREVIEW_COMMAND,
+};
 use crate::json_util::{content_to_text, number_at, string_at};
-use crate::model::{LaunchArg, LaunchPlan, ProviderCapabilities, ProviderDescriptor, SessionRecord, ShellWrap};
-use crate::paths::{default_claude_projects_dir, file_stem, normalize_windows_path, workspace_dir};
+use crate::model::{
+    LaunchArg, LaunchPlan, ProviderCapabilities, ProviderDescriptor, SessionRecord, ShellWrap,
+};
+use crate::paths::{default_claude_projects_dir, file_stem, normalize_windows_path};
 use crate::providers::deepseek::invalid_record;
 use crate::time::system_time_to_rfc3339;
 use serde_json::Value;
@@ -25,7 +30,7 @@ impl Provider for ClaudeProvider {
             badge_text: "C".to_string(),
             capabilities: ProviderCapabilities {
                 quick_reply: false,
-                launcher_toggle: false,
+                launcher_toggle: true,
                 favorite: true,
                 open_session_folder: true,
                 resume: true,
@@ -38,21 +43,36 @@ impl Provider for ClaudeProvider {
         list_sessions(override_path.unwrap_or_else(default_claude_projects_dir))
     }
 
-    fn check_agent(&self, _context: AgentCheckContext) -> crate::model::DeepseekStatus {
-        status_for_command(CLAUDE_CODE_COMMAND)
+    fn check_agent(&self, context: AgentCheckContext) -> crate::model::DeepseekStatus {
+        let launcher = context.launcher.unwrap_or_else(|| "cmd".to_string());
+        status_for_command(claude_command(&launcher))
     }
 
     fn plan_resume(&self, request: ResumeRequest) -> Result<LaunchPlan, String> {
+        let launcher = request.launcher.unwrap_or_else(|| "cmd".to_string());
+        let command = claude_command(&launcher);
         Ok(LaunchPlan {
-            program: CLAUDE_CODE_COMMAND.to_string(),
+            program: command.to_string(),
             args: vec![
-                LaunchArg { value: "--resume".to_string(), single_line: false, shell_quote: false },
-                LaunchArg { value: request.session_id, single_line: false, shell_quote: false },
+                LaunchArg {
+                    value: "--resume".to_string(),
+                    single_line: false,
+                    shell_quote: launcher == "ps1",
+                },
+                LaunchArg {
+                    value: request.session_id,
+                    single_line: false,
+                    shell_quote: launcher == "ps1",
+                },
             ],
-            cwd: Some(workspace_dir(request.workspace.map(|w| normalize_windows_path(&w))).to_string_lossy().to_string()),
-            shell_wrap: ShellWrap::CmdStart,
+            cwd: launch_cwd(request.workspace.map(|w| normalize_windows_path(&w))),
+            shell_wrap: if launcher == "ps1" {
+                ShellWrap::PowerShellScript
+            } else {
+                ShellWrap::CmdStart
+            },
             prefer_windows_terminal: true,
-            error_command_label: CLAUDE_CODE_COMMAND.to_string(),
+            error_command_label: command.to_string(),
             use_call_operator: false,
         })
     }
@@ -73,7 +93,12 @@ fn list_sessions(dir: PathBuf) -> Result<Vec<SessionRecord>, String> {
         let project = match project {
             Ok(project) => project,
             Err(error) => {
-                records.push(invalid_record("claude", "", "", format!("读取 Claude 项目目录失败: {error}")));
+                records.push(invalid_record(
+                    "claude",
+                    "",
+                    "",
+                    format!("读取 Claude 项目目录失败: {error}"),
+                ));
                 continue;
             }
         };
@@ -106,7 +131,12 @@ fn collect_jsonl_sessions(dir: &Path, records: &mut Vec<SessionRecord>) {
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                records.push(invalid_record("claude", "", "", format!("读取 Claude 会话文件失败: {error}")));
+                records.push(invalid_record(
+                    "claude",
+                    "",
+                    "",
+                    format!("读取 Claude 会话文件失败: {error}"),
+                ));
                 continue;
             }
         };
@@ -254,7 +284,11 @@ pub fn decode_claude_project_dir(name: &str) -> String {
 
     if let Some((drive, rest)) = trimmed.split_once("--") {
         if drive.len() == 1 && drive.chars().next().unwrap().is_ascii_alphabetic() {
-            return format!("{}:\\{}", drive.to_ascii_uppercase(), rest.replace('-', "\\"));
+            return format!(
+                "{}:\\{}",
+                drive.to_ascii_uppercase(),
+                rest.replace('-', "\\")
+            );
         }
     }
 

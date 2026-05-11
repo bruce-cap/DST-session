@@ -1,9 +1,13 @@
 //! Provides DeepSeek JSON session listing and resume planning.
 
-use super::{deepseek_command, status_for_command, AgentCheckContext, Provider, ResumeRequest};
+use super::{
+    deepseek_command, launch_cwd, status_for_command, AgentCheckContext, Provider, ResumeRequest,
+};
 use crate::json_util::{content_to_text, number_at, string_at};
-use crate::model::{LaunchArg, LaunchPlan, ProviderCapabilities, ProviderDescriptor, SessionRecord, ShellWrap};
-use crate::paths::{default_sessions_dir, file_stem, normalize_windows_path, workspace_dir};
+use crate::model::{
+    LaunchArg, LaunchPlan, ProviderCapabilities, ProviderDescriptor, SessionRecord, ShellWrap,
+};
+use crate::paths::{default_sessions_dir, file_stem, normalize_windows_path};
 use crate::state::normalize_deepseek_launcher;
 use serde_json::Value;
 use std::fs;
@@ -38,21 +42,33 @@ impl Provider for DeepseekProvider {
     }
 
     fn check_agent(&self, context: AgentCheckContext) -> crate::model::DeepseekStatus {
-        let launcher = normalize_deepseek_launcher(context.deepseek_launcher);
+        let launcher = normalize_deepseek_launcher(context.launcher);
         status_for_command(deepseek_command(&launcher))
     }
 
     fn plan_resume(&self, request: ResumeRequest) -> Result<LaunchPlan, String> {
-        let launcher = normalize_deepseek_launcher(request.deepseek_launcher);
+        let launcher = normalize_deepseek_launcher(request.launcher);
         let command = deepseek_command(&launcher);
         Ok(LaunchPlan {
             program: command.to_string(),
             args: vec![
-                LaunchArg { value: "resume".to_string(), single_line: false, shell_quote: launcher == "ps1" },
-                LaunchArg { value: request.session_id, single_line: false, shell_quote: launcher == "ps1" },
+                LaunchArg {
+                    value: "resume".to_string(),
+                    single_line: false,
+                    shell_quote: launcher == "ps1",
+                },
+                LaunchArg {
+                    value: request.session_id,
+                    single_line: false,
+                    shell_quote: launcher == "ps1",
+                },
             ],
-            cwd: Some(workspace_dir(request.workspace.map(|w| normalize_windows_path(&w))).to_string_lossy().to_string()),
-            shell_wrap: if launcher == "ps1" { ShellWrap::PowerShellScript } else { ShellWrap::CmdStart },
+            cwd: launch_cwd(request.workspace.map(|w| normalize_windows_path(&w))),
+            shell_wrap: if launcher == "ps1" {
+                ShellWrap::PowerShellScript
+            } else {
+                ShellWrap::CmdStart
+            },
             prefer_windows_terminal: true,
             error_command_label: command.to_string(),
             use_call_operator: false,
@@ -76,7 +92,12 @@ fn list_sessions(dir: PathBuf) -> Result<Vec<SessionRecord>, String> {
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                records.push(invalid_record("deepseek", "", "", format!("读取目录项失败: {error}")));
+                records.push(invalid_record(
+                    "deepseek",
+                    "",
+                    "",
+                    format!("读取目录项失败: {error}"),
+                ));
                 continue;
             }
         };
@@ -111,7 +132,13 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
     let preview = first_user_text(json.get("messages").and_then(Value::as_array));
     let title = string_at(metadata, "title")
         .filter(|title| !title.trim().is_empty())
-        .unwrap_or_else(|| if preview.is_empty() { "(untitled)".to_string() } else { preview.clone() });
+        .unwrap_or_else(|| {
+            if preview.is_empty() {
+                "(untitled)".to_string()
+            } else {
+                preview.clone()
+            }
+        });
 
     Ok(SessionRecord {
         source: "deepseek".to_string(),
@@ -136,7 +163,11 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
 }
 
 pub fn invalid_record(source: &str, id: &str, path: &str, reason: String) -> SessionRecord {
-    let id = if id.is_empty() { "(invalid)".to_string() } else { id.to_string() };
+    let id = if id.is_empty() {
+        "(invalid)".to_string()
+    } else {
+        id.to_string()
+    };
 
     SessionRecord {
         source: source.to_string(),

@@ -1,6 +1,7 @@
 export type GroupBy = "workspace" | "date" | "model" | "mode" | "favorite" | "none";
 export type SessionSource = "deepseek" | "claude" | "codex";
-export type DeepseekLauncher = "cmd" | "ps1";
+export type ProviderLauncher = "cmd" | "ps1";
+export type DeepseekLauncher = ProviderLauncher;
 export type ThemeMode = "light" | "dark";
 
 export interface SessionRecord {
@@ -43,8 +44,8 @@ export interface SourceState {
 
 export interface AppState {
   favorites: string[];
-  launchMode: "new_terminal" | "embedded";
   deepseekLauncher: DeepseekLauncher;
+  providerLaunchers: Record<SessionSource, ProviderLauncher>;
   autoRefreshEnabled: boolean;
   autoRefreshIntervalMinutes: number;
 }

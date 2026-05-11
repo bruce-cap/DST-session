@@ -1,15 +1,19 @@
 /** Loads and mutates persisted app state through typed IPC. */
 
 import { useState } from "react";
-import { getAppState, setAutoRefresh, setDeepseekLauncher, setFavorite } from "../api";
+import { getAppState, setAutoRefresh, setDeepseekLauncher, setFavorite, setProviderLauncher } from "../api";
 import { favoriteKey, isFavorite } from "../lib/favorites";
 import { toMessage } from "../lib/format";
-import type { AppState, DeepseekLauncher, SessionRecord } from "../types";
+import type { AppState, DeepseekLauncher, ProviderLauncher, SessionRecord, SessionSource } from "../types";
 
 const defaultState: AppState = {
   favorites: [],
-  launchMode: "new_terminal",
   deepseekLauncher: "cmd",
+  providerLaunchers: {
+    deepseek: "cmd",
+    claude: "cmd",
+    codex: "ps1"
+  },
   autoRefreshEnabled: true,
   autoRefreshIntervalMinutes: 5
 };
@@ -19,7 +23,7 @@ export function useAppState() {
   const [error, setError] = useState<string | null>(null);
 
   async function loadAppState(): Promise<AppState> {
-    const state = await getAppState();
+    const state = normalizeAppState(await getAppState());
     setAppState(state);
     return state;
   }
@@ -40,7 +44,19 @@ export function useAppState() {
 
   async function changeDeepseekLauncher(next: DeepseekLauncher): Promise<AppState | null> {
     try {
-      const nextState = await setDeepseekLauncher({ launcher: next });
+      const nextState = normalizeAppState(await setDeepseekLauncher({ launcher: next }));
+      setAppState(nextState);
+      setError(null);
+      return nextState;
+    } catch (caught) {
+      setError(toMessage(caught));
+      return null;
+    }
+  }
+
+  async function changeProviderLauncher(source: SessionSource, launcher: ProviderLauncher): Promise<AppState | null> {
+    try {
+      const nextState = normalizeAppState(await setProviderLauncher({ source, launcher }));
       setAppState(nextState);
       setError(null);
       return nextState;
@@ -52,7 +68,7 @@ export function useAppState() {
 
   async function changeAutoRefresh(enabled: boolean, intervalMinutes: number): Promise<AppState | null> {
     try {
-      const nextState = await setAutoRefresh({ enabled, intervalMinutes });
+      const nextState = normalizeAppState(await setAutoRefresh({ enabled, intervalMinutes }));
       setAppState(nextState);
       setError(null);
       return nextState;
@@ -62,5 +78,19 @@ export function useAppState() {
     }
   }
 
-  return { appState, setAppState, loadAppState, toggleFavorite, changeDeepseekLauncher, changeAutoRefresh, error, setError };
+  return { appState, setAppState, loadAppState, toggleFavorite, changeDeepseekLauncher, changeProviderLauncher, changeAutoRefresh, error, setError };
+}
+
+function normalizeAppState(state: AppState): AppState {
+  const providerLaunchers = { ...defaultState.providerLaunchers };
+  for (const source of ["deepseek", "claude", "codex"] as const) {
+    const launcher = state.providerLaunchers?.[source];
+    providerLaunchers[source] = launcher === "cmd" || launcher === "ps1" ? launcher : providerLaunchers[source];
+  }
+
+  return {
+    ...state,
+    deepseekLauncher: providerLaunchers.deepseek,
+    providerLaunchers
+  };
 }

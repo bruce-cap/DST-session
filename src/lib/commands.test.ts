@@ -14,9 +14,15 @@ describe("command helpers", () => {
     );
   });
 
-  it("builds the Claude Code resume command", () => {
+  it("builds the Claude Code resume command with the cmd launcher by default", () => {
     expect(buildResumeCommand("claude", "3fff3ed8-303a-424f-85f2-4a243b3d5ffc")).toBe(
-      "claude --resume 3fff3ed8-303a-424f-85f2-4a243b3d5ffc"
+      "claude.cmd --resume 3fff3ed8-303a-424f-85f2-4a243b3d5ffc"
+    );
+  });
+
+  it("builds the Claude Code resume command with the ps1 launcher", () => {
+    expect(buildResumeCommand("claude", "3fff3ed8-303a-424f-85f2-4a243b3d5ffc", "ps1")).toBe(
+      "claude.ps1 --resume 3fff3ed8-303a-424f-85f2-4a243b3d5ffc"
     );
   });
 
@@ -24,21 +30,31 @@ describe("command helpers", () => {
     expect(buildResumeCommand("codex", "thread-abc123")).toBe("codex.ps1 resume thread-abc123");
   });
 
-  it("builds a Codex quick-reply command with a quoted prompt", () => {
-    expect(buildResumeCommand("codex", "thread-abc123", "cmd", "继续上一轮")).toBe(
-      'codex.ps1 resume thread-abc123 "继续上一轮"'
+  it("builds a Codex resume command with the cmd launcher", () => {
+    expect(buildResumeCommand("codex", "thread-abc123", "cmd")).toBe("codex.cmd resume thread-abc123");
+  });
+
+  it("builds a Codex quick-reply command with a PowerShell-quoted prompt", () => {
+    expect(buildResumeCommand("codex", "thread-abc123", "ps1", "继续上一轮")).toBe(
+      "codex.ps1 resume thread-abc123 '继续上一轮'"
     );
   });
 
   it("ignores empty or whitespace-only prompts for Codex", () => {
-    expect(buildResumeCommand("codex", "thread-abc123", "cmd", "   ")).toBe(
+    expect(buildResumeCommand("codex", "thread-abc123", "ps1", "   ")).toBe(
       "codex.ps1 resume thread-abc123"
     );
   });
 
-  it("escapes double quotes in a Codex prompt", () => {
+  it("keeps double quotes literal in a PowerShell-quoted Codex prompt", () => {
+    expect(buildResumeCommand("codex", "tid", "ps1", 'say "hi"')).toBe(
+      "codex.ps1 resume tid 'say \"hi\"'"
+    );
+  });
+
+  it("doubles double quotes in a cmd-quoted Codex prompt", () => {
     expect(buildResumeCommand("codex", "tid", "cmd", 'say "hi"')).toBe(
-      'codex.ps1 resume tid "say \\"hi\\""'
+      'codex.cmd resume tid "say ""hi"""'
     );
   });
 
