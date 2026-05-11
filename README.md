@@ -149,4 +149,4 @@ src-tauri/
 
 ## License
 
-No license has been selected yet. Add one before publishing if you want others to use, modify, or redistribute the project.
+MIT License

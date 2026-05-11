@@ -3,7 +3,7 @@
 import type { SessionGroup } from "../types";
 import type { TFunction } from "../lib/i18n";
 
-const GROUP_LABEL_LIMIT = 10;
+const GROUP_LABEL_LIMIT = 20;
 
 export function GroupList(props: {
   groups: SessionGroup[];
