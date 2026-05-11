@@ -1,0 +1,119 @@
+:root {
+  color-scheme: light dark;
+  font-family:
+    "Inter var", "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI Variable", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC",
+    "Microsoft YaHei", system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01", "ss03", "cv05", "cv08";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+
+  --serif: "Instrument Serif", "Iowan Old Style", "Apple Garamond", "Baskerville",
+    "Times New Roman", "Droid Serif", Times, serif;
+  --mono: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  /* Light — warm off-white paper */
+  --page: #f5f4ef;
+  --page-tint: #efeee8;
+  --sidebar: #ebe9e1;
+  --canvas: #ffffff;
+  --canvas-warm: #fafaf7;
+  --terminal: #1a1a1c;
+  --terminal-ink: #f5f4ef;
+
+  --ink-1: #18181b;
+  --ink-2: #3f3f46;
+  --ink-3: #71717a;
+  --ink-4: #a1a1aa;
+  --ink-5: #d4d4d8;
+
+  --hover: rgba(24, 24, 27, 0.04);
+  --pressed: rgba(24, 24, 27, 0.07);
+  --selected: rgba(24, 24, 27, 0.05);
+
+  --divider: rgba(24, 24, 27, 0.08);
+  --divider-strong: rgba(24, 24, 27, 0.14);
+
+  /* Accent — a deeper indigo, less cliché than iOS blue */
+  --accent: #1e3a8a;
+  --accent-hover: #1e40af;
+  --accent-pressed: #1e3578;
+  --accent-soft: rgba(30, 58, 138, 0.08);
+
+  /* Brand dots for sources */
+  --deepseek: #2563eb;
+  --claude: #d97706;
+
+  --success: #16a34a;
+  --success-bg: rgba(22, 163, 74, 0.1);
+  --warning: #ca8a04;
+  --warning-bg: rgba(202, 138, 4, 0.1);
+  --danger: #dc2626;
+  --danger-bg: rgba(220, 38, 38, 0.08);
+  --gold: #eab308;
+
+  --shadow-sm: 0 1px 2px rgba(24, 24, 27, 0.04);
+  --shadow-md: 0 4px 12px rgba(24, 24, 27, 0.05), 0 1px 3px rgba(24, 24, 27, 0.04);
+  --shadow-lg: 0 20px 48px rgba(24, 24, 27, 0.1), 0 4px 12px rgba(24, 24, 27, 0.06);
+  --shadow-primary: 0 6px 16px rgba(30, 58, 138, 0.28), 0 2px 4px rgba(30, 58, 138, 0.16);
+
+  --ring: 0 0 0 3px rgba(30, 58, 138, 0.2);
+
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+}
+
+:root[data-theme="dark"] {
+  /* Dark — layered blacks, slightly cool */
+  --page: #0a0a0b;
+  --page-tint: #0e0e10;
+  --sidebar: #111113;
+  --canvas: #17171a;
+  --canvas-warm: #1a1a1d;
+  --terminal: #000000;
+  --terminal-ink: #e5e4df;
+
+  --ink-1: #fafafa;
+  --ink-2: #d4d4d8;
+  --ink-3: #a1a1aa;
+  --ink-4: #71717a;
+  --ink-5: #3f3f46;
+
+  --hover: rgba(250, 250, 250, 0.05);
+  --pressed: rgba(250, 250, 250, 0.08);
+  --selected: rgba(250, 250, 250, 0.06);
+
+  --divider: rgba(250, 250, 250, 0.08);
+  --divider-strong: rgba(250, 250, 250, 0.14);
+
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-pressed: #6366f1;
+  --accent-soft: rgba(129, 140, 248, 0.14);
+
+  --deepseek: #60a5fa;
+  --claude: #fbbf24;
+
+  --success: #4ade80;
+  --success-bg: rgba(74, 222, 128, 0.14);
+  --warning: #facc15;
+  --warning-bg: rgba(250, 204, 21, 0.14);
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.14);
+  --gold: #fbbf24;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --shadow-primary: 0 6px 16px rgba(129, 140, 248, 0.3);
+
+  --ring: 0 0 0 3px rgba(129, 140, 248, 0.3);
+}
+

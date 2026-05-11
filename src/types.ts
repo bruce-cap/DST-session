@@ -1,6 +1,7 @@
 export type GroupBy = "workspace" | "date" | "model" | "mode" | "favorite" | "none";
 export type SessionSource = "deepseek" | "claude" | "codex";
 export type DeepseekLauncher = "cmd" | "ps1";
+export type ThemeMode = "light" | "dark";
 
 export interface SessionRecord {
   source: SessionSource;
@@ -35,4 +36,25 @@ export interface DeepseekStatus {
   available: boolean;
   version: string;
   message: string;
+}
+
+export interface ProviderCapabilities {
+  quickReply: boolean;
+  launcherToggle: boolean;
+  favorite: boolean;
+  openSessionFolder: boolean;
+  resume: boolean;
+  copyCommand: boolean;
+}
+
+export interface ProviderDescriptor {
+  id: SessionSource;
+  displayNameKey: "source_deepseek" | "source_claude" | "source_codex";
+  shortName: string;
+  iconKey: "deepseek" | "claude" | "codex";
+  badgeKey: "deepseek" | "claude" | "codex";
+  defaultGroupBy: GroupBy;
+  commandLabel: string;
+  badgeText: string;
+  capabilities: ProviderCapabilities;
 }

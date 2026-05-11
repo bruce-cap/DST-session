@@ -1,0 +1,61 @@
+/* ============================================================
+   SHELL
+============================================================ */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--page);
+}
+
+/* ============================================================
+   WORKSPACE — three-column
+============================================================ */
+.workspace {
+  display: grid;
+  grid-template-columns: 244px minmax(380px, 1fr) minmax(440px, 480px);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--page);
+}
+
+.sidebar,
+.session-list,
+.detail-panel {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.sidebar::-webkit-scrollbar,
+.session-list::-webkit-scrollbar,
+.detail-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-track,
+.session-list::-webkit-scrollbar-track,
+.detail-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb,
+.session-list::-webkit-scrollbar-thumb,
+.detail-panel::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+  transition: background 200ms var(--ease-out);
+}
+
+.sidebar:hover::-webkit-scrollbar-thumb,
+.session-list:hover::-webkit-scrollbar-thumb,
+.detail-panel:hover::-webkit-scrollbar-thumb {
+  background: var(--ink-5);
+  background-clip: padding-box;
+}
+

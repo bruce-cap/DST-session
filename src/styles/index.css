@@ -1,0 +1,12 @@
+@import url("https://rsms.me/inter/inter.css");
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap");
+@import "./tokens.css";
+@import "./base.css";
+@import "./layout.css";
+@import "./components/buttons.css";
+@import "./components/detail-panel.css";
+@import "./components/messages.css";
+@import "./components/session-list.css";
+@import "./components/settings.css";
+@import "./components/sidebar.css";
+@import "./components/titlebar.css";
