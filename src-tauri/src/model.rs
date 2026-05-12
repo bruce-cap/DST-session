@@ -40,6 +40,59 @@ pub struct SessionRecord {
     pub invalid_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsageSummary {
+    pub total_tokens: u64,
+    pub total_sessions: u64,
+    pub total_messages: u64,
+    pub by_provider: Vec<ProviderTokenUsage>,
+    pub by_day: Vec<DailyTokenUsage>,
+    pub by_model: Vec<ModelTokenUsage>,
+    pub by_model_by_day: Vec<ModelDailyTokenUsage>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderTokenUsage {
+    pub source: String,
+    pub total_tokens: u64,
+    pub session_count: u64,
+    pub message_count: u64,
+    pub latest_activity: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyTokenUsage {
+    pub date: String,
+    pub source: String,
+    pub total_tokens: u64,
+    pub session_count: u64,
+    pub message_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelTokenUsage {
+    pub source: String,
+    pub model: String,
+    pub total_tokens: u64,
+    pub session_count: u64,
+    pub message_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelDailyTokenUsage {
+    pub date: String,
+    pub source: String,
+    pub model: String,
+    pub total_tokens: u64,
+    pub session_count: u64,
+    pub message_count: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppState {

@@ -1,9 +1,18 @@
-//! Converts system and millisecond timestamps to RFC 3339 UTC strings.
+//! Converts system and millisecond timestamps to RFC 3339 strings.
 
+use chrono::{Local, TimeZone};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn ms_to_rfc3339(millis: i64) -> String {
     system_time_to_rfc3339(UNIX_EPOCH + std::time::Duration::from_millis(millis.max(0) as u64))
+}
+
+pub fn ms_to_local_rfc3339(millis: i64) -> String {
+    Local
+        .timestamp_millis_opt(millis.max(0))
+        .single()
+        .map(|value| value.format("%Y-%m-%dT%H:%M:%S%:z").to_string())
+        .unwrap_or_else(|| ms_to_rfc3339(millis))
 }
 
 pub fn system_time_to_rfc3339(value: SystemTime) -> String {
@@ -44,6 +53,13 @@ mod tests {
     #[test]
     fn ms_to_rfc3339_clamps_negative_to_epoch() {
         assert_eq!(ms_to_rfc3339(-1), "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn ms_to_local_rfc3339_emits_local_offset_timestamp() {
+        let value = ms_to_local_rfc3339(0);
+        assert!(value.starts_with("1970-01-01T") || value.starts_with("1969-12-31T"));
+        assert_ne!(value, "1970-01-01T00:00:00Z");
     }
 
     #[test]

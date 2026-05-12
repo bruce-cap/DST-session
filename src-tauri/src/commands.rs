@@ -4,6 +4,7 @@ use crate::index;
 use crate::launcher;
 use crate::model::{
     AppState, DeepseekStatus, ProviderDescriptor, RefreshResult, SessionRecord, SourceState,
+    TokenUsageSummary,
 };
 use crate::providers::{AgentCheckContext, ProviderRegistry, ResumeRequest};
 use crate::state::{
@@ -61,6 +62,17 @@ pub fn refresh_sessions(
 pub fn get_source_state(source: Option<String>) -> Result<Option<SourceState>, String> {
     let source = source.unwrap_or_else(|| crate::providers::DEFAULT_SOURCE.to_string());
     index::read_source_state(&source)
+}
+
+#[tauri::command]
+pub fn get_token_usage() -> Result<TokenUsageSummary, String> {
+    index::read_token_usage()
+}
+
+#[tauri::command]
+pub fn refresh_token_usage(source: Option<String>) -> Result<RefreshResult, String> {
+    let source = source.unwrap_or_else(|| crate::providers::DEFAULT_SOURCE.to_string());
+    crate::usage::refresh_token_usage_for_source(&source)
 }
 
 #[tauri::command]

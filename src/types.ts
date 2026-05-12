@@ -3,6 +3,9 @@ export type SessionSource = "deepseek" | "claude" | "codex";
 export type ProviderLauncher = "cmd" | "ps1";
 export type DeepseekLauncher = ProviderLauncher;
 export type ThemeMode = "light" | "dark";
+export type AppPage = "sessions" | "usage";
+export type UsageRange = "all" | "30d" | "7d";
+export type UsageTab = "overview" | "models";
 
 export interface SessionRecord {
   source: SessionSource;
@@ -25,6 +28,49 @@ export interface SessionGroup {
   key: string;
   label: string;
   sessions: SessionRecord[];
+}
+
+export interface TokenUsageSummary {
+  totalTokens: number;
+  totalSessions: number;
+  totalMessages: number;
+  byProvider: ProviderTokenUsage[];
+  byDay: DailyTokenUsage[];
+  byModel: ModelTokenUsage[];
+  byModelByDay: ModelDailyTokenUsage[];
+}
+
+export interface ProviderTokenUsage {
+  source: SessionSource;
+  totalTokens: number;
+  sessionCount: number;
+  messageCount: number;
+  latestActivity: string | null;
+}
+
+export interface DailyTokenUsage {
+  date: string;
+  source: SessionSource;
+  totalTokens: number;
+  sessionCount: number;
+  messageCount: number;
+}
+
+export interface ModelTokenUsage {
+  source: SessionSource;
+  model: string;
+  totalTokens: number;
+  sessionCount: number;
+  messageCount: number;
+}
+
+export interface ModelDailyTokenUsage {
+  date: string;
+  source: SessionSource;
+  model: string;
+  totalTokens: number;
+  sessionCount: number;
+  messageCount: number;
 }
 
 export interface RefreshResult {

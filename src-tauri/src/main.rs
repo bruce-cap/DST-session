@@ -11,6 +11,7 @@ mod providers;
 mod shell;
 mod state;
 mod time;
+mod usage;
 
 fn main() {
     tauri::Builder::default()
@@ -20,6 +21,8 @@ fn main() {
             commands::list_sessions,
             commands::refresh_sessions,
             commands::get_source_state,
+            commands::get_token_usage,
+            commands::refresh_token_usage,
             commands::get_app_state,
             commands::set_favorite,
             commands::set_deepseek_launcher,

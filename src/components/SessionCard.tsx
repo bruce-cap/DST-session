@@ -2,7 +2,6 @@
 
 import { isFavorite } from "../lib/favorites";
 import { formatRelative, modelShort, workspaceLeaf } from "../lib/format";
-import { formatTokenCount } from "../lib/session";
 import type { Locale, TFunction } from "../lib/i18n";
 import type { ProviderDescriptor, SessionRecord } from "../types";
 import { Icon } from "./Icon";
@@ -27,7 +26,6 @@ export function SessionCard(props: {
           <span className="dot" />
           <span className="session-meta-path">{workspaceLeaf(props.session.workspace) || props.session.shortId}</span>
           {props.session.model && <><span className="dot" /><span className="model-tag">{modelShort(props.session.model)}</span></>}
-          {props.session.totalTokens > 0 && <><span className="dot" /><span className="token-tag">{formatTokenCount(props.session.totalTokens)} tokens</span></>}
         </div>
       </div>
       {props.provider?.capabilities.favorite && (

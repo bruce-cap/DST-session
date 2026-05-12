@@ -14,11 +14,18 @@
 ============================================================ */
 .workspace {
   display: grid;
-  grid-template-columns: 244px minmax(380px, 1fr) minmax(440px, 480px);
+  grid-template-columns:
+    clamp(210px, 18vw, 244px)
+    minmax(300px, 1fr)
+    minmax(360px, clamp(380px, 32vw, 480px));
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
   background: var(--page);
+}
+
+.workspace > * {
+  min-width: 0;
 }
 
 .sidebar,

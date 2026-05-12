@@ -1,0 +1,274 @@
+use crate::model::{ModelDailyTokenUsage, RefreshResult};
+use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Debug, Clone)]
+pub struct UsageRecord {
+    pub source: String,
+    pub usage_id: String,
+    pub created_at: Option<String>,
+    pub fallback_at: Option<String>,
+    pub model: String,
+    pub total_tokens: u64,
+    pub message_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct UsageBucketKey {
+    source: String,
+    date: String,
+    model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct UsageUnitKey {
+    source: String,
+    date: String,
+    usage_id: String,
+}
+
+pub fn date_from_rfc3339(value: &str) -> Option<String> {
+    let date = value.get(0..10)?;
+    let bytes = value.as_bytes();
+    let has_date_shape = date
+        .as_bytes()
+        .iter()
+        .enumerate()
+        .all(|(index, byte)| match index {
+            4 | 7 => *byte == b'-',
+            _ => byte.is_ascii_digit(),
+        });
+    let has_boundary = bytes.len() == 10 || matches!(bytes.get(10), Some(b'T' | b' '));
+
+    if has_date_shape && has_boundary {
+        Some(date.to_string())
+    } else {
+        None
+    }
+}
+
+fn usage_unit_id(usage_id: &str) -> String {
+    usage_id
+        .split_once("#model:")
+        .map(|(unit_id, _)| unit_id.to_string())
+        .unwrap_or_else(|| usage_id.to_string())
+}
+
+pub fn refresh_token_usage_for_source(source: &str) -> Result<RefreshResult, String> {
+    let previous = crate::index::read_token_usage()?
+        .by_provider
+        .into_iter()
+        .find(|item| item.source == source)
+        .map(|item| item.session_count)
+        .unwrap_or(0);
+
+    let records = load_provider_usage_records(source)?;
+    let aggregated = aggregate_created_day(records);
+    let current = aggregated.iter().map(|row| row.session_count).sum();
+
+    crate::index::replace_usage_daily_model(source, aggregated)?;
+
+    Ok(RefreshResult {
+        source: source.to_string(),
+        refreshed_at_ms: crate::index::now_ms(),
+        previous_count: previous,
+        current_count: current,
+    })
+}
+
+pub fn load_provider_usage_records(source: &str) -> Result<Vec<UsageRecord>, String> {
+    match source {
+        "claude" => crate::providers::claude::list_usage_records(None),
+        "codex" => crate::providers::codex::list_usage_records_from_db(None),
+        "deepseek" => crate::providers::deepseek::list_usage_records(None),
+        other => Err(format!("Unsupported usage source: {other}")),
+    }
+}
+
+pub fn aggregate_created_day(records: Vec<UsageRecord>) -> Vec<ModelDailyTokenUsage> {
+    let mut buckets: BTreeMap<UsageBucketKey, (u64, u64, u64)> = BTreeMap::new();
+    let mut counted_units: BTreeSet<UsageUnitKey> = BTreeSet::new();
+
+    for record in records {
+        if record.total_tokens == 0 {
+            continue;
+        }
+
+        let Some(date) = record
+            .created_at
+            .as_deref()
+            .and_then(date_from_rfc3339)
+            .or_else(|| record.fallback_at.as_deref().and_then(date_from_rfc3339))
+        else {
+            continue;
+        };
+
+        let unit_key = UsageUnitKey {
+            source: record.source.clone(),
+            date: date.clone(),
+            usage_id: usage_unit_id(&record.usage_id),
+        };
+        let count_unit = counted_units.insert(unit_key);
+        let key = UsageBucketKey {
+            source: record.source,
+            date,
+            model: if record.model.trim().is_empty() {
+                "unknown".to_string()
+            } else {
+                record.model
+            },
+        };
+
+        let entry = buckets.entry(key).or_insert((0, 0, 0));
+        entry.0 += record.total_tokens;
+        if count_unit {
+            entry.1 += 1;
+            entry.2 += record.message_count;
+        }
+    }
+
+    buckets
+        .into_iter()
+        .map(|(key, (total_tokens, session_count, message_count))| ModelDailyTokenUsage {
+            date: key.date,
+            source: key.source,
+            model: key.model,
+            total_tokens,
+            session_count,
+            message_count,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aggregate_created_day_groups_by_created_date_source_and_model() {
+        let rows = aggregate_created_day(vec![
+            UsageRecord {
+                source: "codex".to_string(),
+                usage_id: "thread-a".to_string(),
+                created_at: Some("2026-05-01T10:00:00Z".to_string()),
+                fallback_at: Some("2026-05-03T10:00:00Z".to_string()),
+                model: "gpt-5.5".to_string(),
+                total_tokens: 100,
+                message_count: 2,
+            },
+            UsageRecord {
+                source: "codex".to_string(),
+                usage_id: "thread-b".to_string(),
+                created_at: Some("2026-05-01T12:00:00Z".to_string()),
+                fallback_at: None,
+                model: "gpt-5.5".to_string(),
+                total_tokens: 50,
+                message_count: 1,
+            },
+            UsageRecord {
+                source: "deepseek".to_string(),
+                usage_id: "session-c".to_string(),
+                created_at: Some("2026-05-02T00:00:00Z".to_string()),
+                fallback_at: None,
+                model: "deepseek-v4-pro".to_string(),
+                total_tokens: 25,
+                message_count: 4,
+            },
+        ]);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].date, "2026-05-01");
+        assert_eq!(rows[0].source, "codex");
+        assert_eq!(rows[0].model, "gpt-5.5");
+        assert_eq!(rows[0].total_tokens, 150);
+        assert_eq!(rows[0].session_count, 2);
+        assert_eq!(rows[0].message_count, 3);
+        assert_eq!(rows[1].date, "2026-05-02");
+        assert_eq!(rows[1].source, "deepseek");
+        assert_eq!(rows[1].model, "deepseek-v4-pro");
+        assert_eq!(rows[1].total_tokens, 25);
+        assert_eq!(rows[1].session_count, 1);
+        assert_eq!(rows[1].message_count, 4);
+    }
+
+    #[test]
+    fn aggregate_created_day_counts_each_usage_id_once_per_source_date() {
+        let rows = aggregate_created_day(vec![
+            UsageRecord {
+                source: "claude".to_string(),
+                usage_id: "session-a#model:opus".to_string(),
+                created_at: Some("2026-05-01T10:00:00Z".to_string()),
+                fallback_at: None,
+                model: "opus".to_string(),
+                total_tokens: 100,
+                message_count: 3,
+            },
+            UsageRecord {
+                source: "claude".to_string(),
+                usage_id: "session-a#model:sonnet".to_string(),
+                created_at: Some("2026-05-01T10:00:00Z".to_string()),
+                fallback_at: None,
+                model: "sonnet".to_string(),
+                total_tokens: 50,
+                message_count: 3,
+            },
+        ]);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].model, "opus");
+        assert_eq!(rows[0].session_count, 1);
+        assert_eq!(rows[0].message_count, 3);
+        assert_eq!(rows[1].model, "sonnet");
+        assert_eq!(rows[1].session_count, 0);
+        assert_eq!(rows[1].message_count, 0);
+    }
+
+    #[test]
+    fn aggregate_created_day_uses_fallback_and_skips_unusable_records() {
+        let rows = aggregate_created_day(vec![
+            UsageRecord {
+                source: "claude".to_string(),
+                usage_id: "fallback".to_string(),
+                created_at: None,
+                fallback_at: Some("2026-05-04T00:00:00Z".to_string()),
+                model: "  ".to_string(),
+                total_tokens: 12,
+                message_count: 3,
+            },
+            UsageRecord {
+                source: "claude".to_string(),
+                usage_id: "zero".to_string(),
+                created_at: Some("2026-05-04T00:00:00Z".to_string()),
+                fallback_at: None,
+                model: "sonnet".to_string(),
+                total_tokens: 0,
+                message_count: 9,
+            },
+            UsageRecord {
+                source: "claude".to_string(),
+                usage_id: "undated".to_string(),
+                created_at: Some("not-a-date".to_string()),
+                fallback_at: None,
+                model: "sonnet".to_string(),
+                total_tokens: 10,
+                message_count: 1,
+            },
+        ]);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].date, "2026-05-04");
+        assert_eq!(rows[0].source, "claude");
+        assert_eq!(rows[0].model, "unknown");
+        assert_eq!(rows[0].total_tokens, 12);
+        assert_eq!(rows[0].session_count, 1);
+        assert_eq!(rows[0].message_count, 3);
+    }
+
+    #[test]
+    fn date_from_rfc3339_requires_date_prefix_digits_and_boundary() {
+        assert_eq!(date_from_rfc3339("2026-05-12T03:00:00Z"), Some("2026-05-12".to_string()));
+        assert_eq!(date_from_rfc3339("2026-05-12"), Some("2026-05-12".to_string()));
+        assert_eq!(date_from_rfc3339("2026-ab-12T03:00:00Z"), None);
+        assert_eq!(date_from_rfc3339("2026-05-12foo"), None);
+        assert_eq!(date_from_rfc3339("20260512"), None);
+    }
+}

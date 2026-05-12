@@ -47,7 +47,7 @@ The app writes only its own state file for favorites and launch settings:
 %USERPROFILE%\.agent-session-manager\state.json
 ```
 
-If you already used the old DeepSeek Session Manager name, the app keeps reading the legacy `%USERPROFILE%\.deepseek-session-manager` directory when it exists, so existing favorites and settings are not lost during the rename.
+If you already used the old DeepSeek Session Manager name, the app copies missing `state.json` / `index.sqlite` files from the legacy `%USERPROFILE%\.deepseek-session-manager` directory into `%USERPROFILE%\.agent-session-manager` on startup, so existing favorites and settings are not lost during the rename.
 
 UI preferences such as language and theme are stored in browser local storage inside the Tauri WebView.
 

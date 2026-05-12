@@ -10,7 +10,7 @@ use crate::model::{
 };
 use crate::paths::{default_codex_db_path, normalize_windows_path};
 use crate::providers::deepseek::invalid_record;
-use crate::time::ms_to_rfc3339;
+use crate::time::{ms_to_local_rfc3339, ms_to_rfc3339};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
@@ -88,6 +88,10 @@ impl Provider for CodexProvider {
     }
 }
 
+pub fn list_usage_records_from_db(db_path: Option<PathBuf>) -> Result<Vec<crate::usage::UsageRecord>, String> {
+    read_codex_threads_for_usage(db_path.unwrap_or_else(default_codex_db_path))
+}
+
 fn list_sessions(db_path: PathBuf) -> Result<Vec<SessionRecord>, String> {
     if !db_path.exists() {
         return Err(format!(
@@ -154,6 +158,64 @@ struct CodexRow {
     rollout_path: String,
     model: String,
     tokens_used: u64,
+}
+
+fn read_codex_threads_for_usage(db_path: PathBuf) -> Result<Vec<crate::usage::UsageRecord>, String> {
+    if !db_path.exists() {
+        return Err(format!(
+            "Codex 数据库不存在：{}。请确认已安装 Codex CLI 并至少运行过一次，或在设置中指定自定义路径。",
+            db_path.display()
+        ));
+    }
+
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .map_err(|error| format!("打开 Codex 数据库失败 {}: {error}", db_path.display()))?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, model, tokens_used, created_at_ms, updated_at_ms, archived
+             FROM threads
+             WHERE tokens_used > 0",
+        )
+        .map_err(|error| format!("查询 Codex usage threads 失败: {error}"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let model = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+            let tokens_used = row.get::<_, Option<i64>>(2)?.unwrap_or_default().max(0) as u64;
+            Ok(crate::usage::UsageRecord {
+                source: "codex".to_string(),
+                usage_id: row.get::<_, String>(0)?,
+                created_at: row.get::<_, Option<i64>>(3)?.map(ms_to_local_rfc3339),
+                fallback_at: row.get::<_, Option<i64>>(4)?.map(ms_to_local_rfc3339),
+                model: if model.trim().is_empty() {
+                    "unknown".to_string()
+                } else {
+                    model
+                },
+                total_tokens: tokens_used,
+                message_count: 0,
+            })
+        })
+        .map_err(|error| format!("枚举 Codex usage threads 失败: {error}"))?;
+
+    collect_usage_rows(rows)
+}
+
+fn collect_usage_rows(
+    rows: rusqlite::MappedRows<
+        '_,
+        impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<crate::usage::UsageRecord>,
+    >,
+) -> Result<Vec<crate::usage::UsageRecord>, String> {
+    let mut records = Vec::new();
+    for row in rows {
+        records.push(row.map_err(|error| format!("读取 Codex usage row 失败: {error}"))?);
+    }
+    Ok(records)
 }
 
 fn codex_record_from_row(row: CodexRow) -> SessionRecord {
@@ -294,6 +356,53 @@ mod tests {
         assert_eq!(record.path, r"C:\rollout.jsonl");
         assert_eq!(record.model, "gpt-5");
         assert_eq!(record.total_tokens, 42);
+    }
+
+    #[test]
+    fn list_usage_records_from_db_reads_all_positive_threads_without_rollout() {
+        let dir = std::env::temp_dir().join(format!(
+            "dst-session-codex-db-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("state_5.sqlite");
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE threads (
+                    id TEXT NOT NULL,
+                    model TEXT,
+                    tokens_used INTEGER,
+                    created_at_ms INTEGER,
+                    updated_at_ms INTEGER,
+                    archived INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT INTO threads (id, model, tokens_used, created_at_ms, updated_at_ms, archived)
+                VALUES
+                    ('active-thread', 'gpt-5', 123, 0, 1000, 0),
+                    ('archived-thread', '', 456, 2000, 3000, 1),
+                    ('empty-thread', 'gpt-5', 0, 4000, 5000, 0);",
+            )
+            .unwrap();
+        }
+
+        let mut records = list_usage_records_from_db(Some(db_path.clone())).unwrap();
+        records.sort_by(|left, right| left.usage_id.cmp(&right.usage_id));
+
+        fs::remove_file(&db_path).ok();
+        fs::remove_dir(&dir).ok();
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].source, "codex");
+        assert_eq!(records[0].usage_id, "active-thread");
+        assert!(records[0].created_at.as_deref().is_some_and(|value| value.starts_with("1970-01-01T") || value.starts_with("1969-12-31T")));
+        assert!(records[0].fallback_at.as_deref().is_some_and(|value| value.starts_with("1970-01-01T") || value.starts_with("1969-12-31T")));
+        assert_eq!(records[0].model, "gpt-5");
+        assert_eq!(records[0].total_tokens, 123);
+        assert_eq!(records[0].message_count, 0);
+        assert_eq!(records[1].usage_id, "archived-thread");
+        assert_eq!(records[1].model, "unknown");
+        assert_eq!(records[1].total_tokens, 456);
     }
 
     #[test]

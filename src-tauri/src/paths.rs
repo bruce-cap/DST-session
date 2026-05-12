@@ -1,5 +1,6 @@
 //! Provides filesystem paths and path normalization helpers.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 const APP_DATA_DIR_NAME: &str = ".agent-session-manager";
@@ -32,16 +33,29 @@ pub fn app_index_path() -> PathBuf {
 fn app_data_dir() -> PathBuf {
     let home = home_dir();
     let current = home.join(APP_DATA_DIR_NAME);
-    if current.exists() {
-        return current;
-    }
-
     let legacy = home.join(LEGACY_APP_DATA_DIR_NAME);
-    if legacy.exists() {
-        return legacy;
+    migrate_legacy_app_data_dir(&legacy, &current);
+    current
+}
+
+fn migrate_legacy_app_data_dir(legacy: &Path, current: &Path) {
+    if !legacy.exists() || legacy == current {
+        return;
     }
 
-    current
+    let _ = fs::create_dir_all(current);
+    for file_name in [
+        "state.json",
+        "index.sqlite",
+        "index.sqlite-wal",
+        "index.sqlite-shm",
+    ] {
+        let from = legacy.join(file_name);
+        let to = current.join(file_name);
+        if from.exists() && !to.exists() {
+            let _ = fs::copy(from, to);
+        }
+    }
 }
 
 pub fn workspace_dir(workspace: Option<String>) -> PathBuf {

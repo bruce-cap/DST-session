@@ -47,7 +47,7 @@ Codex 还支持快速回复：在详情面板输入单行 prompt 后，可以直
 %USERPROFILE%\.agent-session-manager\state.json
 ```
 
-如果你之前已经用过旧名称 DeepSeek Session Manager，只要旧的 `%USERPROFILE%\.deepseek-session-manager` 目录存在，应用会继续读取它，避免改名后丢失收藏和设置。
+如果你之前已经用过旧名称 DeepSeek Session Manager，应用启动时会把旧 `%USERPROFILE%\.deepseek-session-manager` 目录里缺失的 `state.json` / `index.sqlite` 复制到 `%USERPROFILE%\.agent-session-manager`，避免改名后丢失收藏和设置。
 
 语言和主题等 UI 偏好会保存在 Tauri WebView 内的浏览器 local storage 中。
 

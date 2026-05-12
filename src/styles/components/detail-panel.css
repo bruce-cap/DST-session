@@ -523,7 +523,7 @@ dd.mono.faint {
 }
 
 /* Responsive */
-@media (max-width: 1180px) {
+@media (max-width: 920px) {
   .workspace {
     grid-template-columns: 220px 1fr;
   }
