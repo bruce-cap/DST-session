@@ -19,3 +19,4 @@ sessions/
 /docs/*
 /.kiro/
 /.claude/
+/.playwright-mcp/
