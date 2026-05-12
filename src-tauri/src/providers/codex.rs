@@ -88,7 +88,9 @@ impl Provider for CodexProvider {
     }
 }
 
-pub fn list_usage_records_from_db(db_path: Option<PathBuf>) -> Result<Vec<crate::usage::UsageRecord>, String> {
+pub fn list_usage_records_from_db(
+    db_path: Option<PathBuf>,
+) -> Result<Vec<crate::usage::UsageRecord>, String> {
     read_codex_threads_for_usage(db_path.unwrap_or_else(default_codex_db_path))
 }
 
@@ -160,7 +162,9 @@ struct CodexRow {
     tokens_used: u64,
 }
 
-fn read_codex_threads_for_usage(db_path: PathBuf) -> Result<Vec<crate::usage::UsageRecord>, String> {
+fn read_codex_threads_for_usage(
+    db_path: PathBuf,
+) -> Result<Vec<crate::usage::UsageRecord>, String> {
     if !db_path.exists() {
         return Err(format!(
             "Codex 数据库不存在：{}。请确认已安装 Codex CLI 并至少运行过一次，或在设置中指定自定义路径。",
@@ -236,12 +240,6 @@ fn codex_record_from_row(row: CodexRow) -> SessionRecord {
     } else {
         row.model
     };
-    let total_tokens = if usage.total_tokens > 0 {
-        usage.total_tokens
-    } else {
-        row.tokens_used
-    };
-
     SessionRecord {
         source: "codex".to_string(),
         short_id: row.id.chars().take(8).collect(),
@@ -251,7 +249,7 @@ fn codex_record_from_row(row: CodexRow) -> SessionRecord {
         created_at: row.created_at_ms.map(ms_to_rfc3339),
         updated_at: row.updated_at_ms.map(ms_to_rfc3339),
         message_count: usage.message_count,
-        total_tokens,
+        total_tokens: row.tokens_used,
         model,
         workspace,
         mode: String::new(),
@@ -359,11 +357,55 @@ mod tests {
     }
 
     #[test]
-    fn list_usage_records_from_db_reads_all_positive_threads_without_rollout() {
+    fn codex_record_from_row_prefers_thread_tokens_used_over_rollout_usage() {
         let dir = std::env::temp_dir().join(format!(
-            "dst-session-codex-db-test-{}",
+            "dst-session-codex-record-token-test-{}",
             std::process::id()
         ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rollout.jsonl");
+        fs::write(
+            &path,
+            serde_json::json!({
+                "timestamp": "2026-05-12T00:00:00Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": 100,
+                            "output_tokens": 30,
+                            "total_tokens": 130
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let record = codex_record_from_row(CodexRow {
+            id: "thread-1".to_string(),
+            title: "Token source".to_string(),
+            preview: String::new(),
+            cwd: r"C:\repo".to_string(),
+            updated_at_ms: Some(0),
+            created_at_ms: Some(0),
+            rollout_path: path.to_string_lossy().to_string(),
+            model: "gpt-5".to_string(),
+            tokens_used: 42,
+        });
+
+        fs::remove_file(&path).ok();
+        fs::remove_dir(&dir).ok();
+
+        assert_eq!(record.total_tokens, 42);
+    }
+
+    #[test]
+    fn list_usage_records_from_db_reads_all_positive_threads_without_rollout() {
+        let dir =
+            std::env::temp_dir().join(format!("dst-session-codex-db-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("state_5.sqlite");
         {
@@ -395,8 +437,12 @@ mod tests {
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].source, "codex");
         assert_eq!(records[0].usage_id, "active-thread");
-        assert!(records[0].created_at.as_deref().is_some_and(|value| value.starts_with("1970-01-01T") || value.starts_with("1969-12-31T")));
-        assert!(records[0].fallback_at.as_deref().is_some_and(|value| value.starts_with("1970-01-01T") || value.starts_with("1969-12-31T")));
+        assert!(records[0].created_at.as_deref().is_some_and(|value| value
+            .starts_with("1970-01-01T")
+            || value.starts_with("1969-12-31T")));
+        assert!(records[0].fallback_at.as_deref().is_some_and(|value| value
+            .starts_with("1970-01-01T")
+            || value.starts_with("1969-12-31T")));
         assert_eq!(records[0].model, "gpt-5");
         assert_eq!(records[0].total_tokens, 123);
         assert_eq!(records[0].message_count, 0);

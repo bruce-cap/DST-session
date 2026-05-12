@@ -49,7 +49,6 @@ export function UsagePage(props: {
   const maxDailyTokens = Math.max(...daily.map((item) => item.totalTokens), 0);
   const maxHeatmapTokens = Math.max(...heatmapDays.map((item) => item.totalTokens), 0);
   const modelTotal = models.reduce((sum, item) => sum + item.totalTokens, 0);
-  const activeProviderCount = usage?.byProvider.filter((item) => item.totalTokens > 0).length ?? 0;
 
   return (
     <section className="usage-page">
@@ -113,7 +112,6 @@ export function UsagePage(props: {
                 <UsageStat label={props.t("usage_total_tokens")} value={formatTokenCount(displayTokens)} />
                 <UsageStat label={props.t("usage_total_sessions")} value={number(displaySessions)} />
                 <UsageStat label={props.t("usage_total_messages")} value={number(displayMessages)} />
-                <UsageStat label={props.t("usage_active_provider")} value={number(activeProviderCount)} />
               </div>
 
               {tab === "overview" ? (

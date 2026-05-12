@@ -1,4 +1,5 @@
 use crate::model::{ModelDailyTokenUsage, RefreshResult};
+use chrono::{DateTime, Local};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -27,23 +28,29 @@ struct UsageUnitKey {
 }
 
 pub fn date_from_rfc3339(value: &str) -> Option<String> {
-    let date = value.get(0..10)?;
-    let bytes = value.as_bytes();
-    let has_date_shape = date
-        .as_bytes()
-        .iter()
-        .enumerate()
-        .all(|(index, byte)| match index {
-            4 | 7 => *byte == b'-',
-            _ => byte.is_ascii_digit(),
-        });
-    let has_boundary = bytes.len() == 10 || matches!(bytes.get(10), Some(b'T' | b' '));
-
-    if has_date_shape && has_boundary {
-        Some(date.to_string())
-    } else {
-        None
+    let value = value.trim();
+    if is_date_only(value) {
+        return Some(value.to_string());
     }
+
+    DateTime::parse_from_rfc3339(value).ok().map(|timestamp| {
+        timestamp
+            .with_timezone(&Local)
+            .format("%Y-%m-%d")
+            .to_string()
+    })
+}
+
+fn is_date_only(value: &str) -> bool {
+    value.len() == 10
+        && value
+            .as_bytes()
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| match index {
+                4 | 7 => *byte == b'-',
+                _ => byte.is_ascii_digit(),
+            })
 }
 
 fn usage_unit_id(usage_id: &str) -> String {
@@ -128,14 +135,16 @@ pub fn aggregate_created_day(records: Vec<UsageRecord>) -> Vec<ModelDailyTokenUs
 
     buckets
         .into_iter()
-        .map(|(key, (total_tokens, session_count, message_count))| ModelDailyTokenUsage {
-            date: key.date,
-            source: key.source,
-            model: key.model,
-            total_tokens,
-            session_count,
-            message_count,
-        })
+        .map(
+            |(key, (total_tokens, session_count, message_count))| ModelDailyTokenUsage {
+                date: key.date,
+                source: key.source,
+                model: key.model,
+                total_tokens,
+                session_count,
+                message_count,
+            },
+        )
         .collect()
 }
 
@@ -265,10 +274,24 @@ mod tests {
 
     #[test]
     fn date_from_rfc3339_requires_date_prefix_digits_and_boundary() {
-        assert_eq!(date_from_rfc3339("2026-05-12T03:00:00Z"), Some("2026-05-12".to_string()));
-        assert_eq!(date_from_rfc3339("2026-05-12"), Some("2026-05-12".to_string()));
+        assert_eq!(
+            date_from_rfc3339("2026-05-12"),
+            Some("2026-05-12".to_string())
+        );
         assert_eq!(date_from_rfc3339("2026-ab-12T03:00:00Z"), None);
         assert_eq!(date_from_rfc3339("2026-05-12foo"), None);
         assert_eq!(date_from_rfc3339("20260512"), None);
+    }
+
+    #[test]
+    fn date_from_rfc3339_converts_timestamp_to_local_calendar_day() {
+        let timestamp = "2026-05-12T18:30:00Z";
+        let expected = chrono::DateTime::parse_from_rfc3339(timestamp)
+            .expect("parse timestamp")
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d")
+            .to_string();
+
+        assert_eq!(date_from_rfc3339(timestamp), Some(expected));
     }
 }
