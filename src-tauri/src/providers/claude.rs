@@ -176,7 +176,8 @@ fn collect_jsonl_sessions(dir: &Path, records: &mut Vec<SessionRecord>) {
         }
 
         match parse_session_file(&path) {
-            Ok(record) => records.push(record),
+            Ok(Some(record)) => records.push(record),
+            Ok(None) => {}
             Err(error) => records.push(invalid_record(
                 "claude",
                 &file_stem(&path),
@@ -281,7 +282,7 @@ fn parse_usage_file(path: &Path) -> Result<Vec<crate::usage::UsageRecord>, Strin
         .collect())
 }
 
-fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
+fn parse_session_file(path: &Path) -> Result<Option<SessionRecord>, String> {
     let content = fs::read_to_string(path)
         .map_err(|error| format!("读取 Claude session 文件失败 {}: {error}", path.display()))?;
     let mut id = file_stem(path);
@@ -295,6 +296,7 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
     let mut model_token_totals = BTreeMap::<String, u64>::new();
     let mut workspace = String::new();
     let mut mode = String::new();
+    let mut has_real_activity = false;
 
     for line in content.lines().filter(|line| !line.trim().is_empty()) {
         let Ok(json) = serde_json::from_str::<Value>(line) else {
@@ -321,9 +323,10 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
 
         match string_at(&json, "type").as_deref() {
             Some("user") => {
+                has_real_activity = true;
+                message_count += 1;
                 let text = claude_message_text(json.get("message"));
                 if !text.is_empty() {
-                    message_count += 1;
                     if preview.is_empty() {
                         preview = text.clone();
                     }
@@ -333,6 +336,7 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
                 }
             }
             Some("assistant") => {
+                has_real_activity = true;
                 message_count += 1;
                 if let Some(message) = json.get("message") {
                     let message_model = string_at(message, "model").unwrap_or_default();
@@ -345,6 +349,7 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
                 }
             }
             Some("result") => {
+                has_real_activity = true;
                 for (usage_model, tokens) in claude_model_usage_tokens(json.get("modelUsage")) {
                     if model.is_empty() && !usage_model.is_empty() {
                         model = usage_model.clone();
@@ -355,6 +360,10 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
             }
             _ => {}
         }
+    }
+
+    if !has_real_activity {
+        return Ok(None);
     }
 
     if title.is_empty() {
@@ -382,7 +391,7 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
         model = dominant_model.clone();
     }
 
-    Ok(SessionRecord {
+    Ok(Some(SessionRecord {
         source: "claude".to_string(),
         short_id: id.chars().take(8).collect(),
         id,
@@ -397,7 +406,7 @@ fn parse_session_file(path: &Path) -> Result<SessionRecord, String> {
         mode,
         path: path.to_string_lossy().to_string(),
         invalid_reason: None,
-    })
+    }))
 }
 
 fn claude_message_text(message: Option<&Value>) -> String {
@@ -617,6 +626,75 @@ mod tests {
     }
 
     #[test]
+    fn list_sessions_skips_permission_mode_only_placeholder_files() {
+        let root = std::env::temp_dir().join(format!(
+            "dst-session-claude-sessions-test-{}",
+            std::process::id()
+        ));
+        let project = root.join("project");
+        let subagents = project.join("subagents");
+        fs::create_dir_all(&subagents).unwrap();
+        let valid_path = project.join("valid.jsonl");
+        let placeholder_path = project.join("placeholder.jsonl");
+        let subagent_path = subagents.join("worker.jsonl");
+
+        fs::write(
+            &valid_path,
+            [
+                json!({
+                    "type": "permission-mode",
+                    "permissionMode": "default",
+                    "sessionId": "valid-session"
+                })
+                .to_string(),
+                json!({
+                    "type": "user",
+                    "sessionId": "valid-session",
+                    "timestamp": "2026-05-12T10:00:00Z",
+                    "message": { "content": "hello" }
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            &placeholder_path,
+            json!({
+                "type": "permission-mode",
+                "permissionMode": "default",
+                "sessionId": "placeholder-session"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            &subagent_path,
+            json!({
+                "type": "user",
+                "sessionId": "subagent-session",
+                "timestamp": "2026-05-12T10:01:00Z",
+                "message": { "content": "subagent" }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let records = list_sessions(root.clone()).unwrap();
+
+        fs::remove_file(&valid_path).ok();
+        fs::remove_file(&placeholder_path).ok();
+        fs::remove_file(&subagent_path).ok();
+        fs::remove_dir(&subagents).ok();
+        fs::remove_dir(&project).ok();
+        fs::remove_dir(&root).ok();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id, "valid-session");
+        assert_eq!(records[0].message_count, 1);
+    }
+
+    #[test]
     fn parse_session_file_sums_assistant_and_result_usage_without_cache() {
         let dir =
             std::env::temp_dir().join(format!("dst-session-claude-test-{}", std::process::id()));
@@ -669,7 +747,7 @@ mod tests {
         ];
         fs::write(&path, lines.join("\n")).unwrap();
 
-        let record = parse_session_file(&path).unwrap();
+        let record = parse_session_file(&path).unwrap().expect("valid session record");
 
         fs::remove_file(&path).ok();
         fs::remove_dir(&dir).ok();
@@ -686,5 +764,56 @@ mod tests {
         assert_eq!(record.message_count, 2);
         assert_eq!(record.total_tokens, 165);
         assert_eq!(record.model, "claude-opus-4-6");
+    }
+
+    #[test]
+    fn parse_session_file_counts_user_tool_result_messages() {
+        let dir = std::env::temp_dir().join(format!(
+            "dst-session-claude-tool-result-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        let lines = [
+            json!({
+                "type": "user",
+                "sessionId": "session-tool-result",
+                "timestamp": "2026-05-12T10:00:00.000Z",
+                "message": {
+                    "content": [{
+                        "type": "tool_result",
+                        "content": [{
+                            "type": "text",
+                            "text": "tool result only"
+                        }]
+                    }]
+                }
+            })
+            .to_string(),
+            json!({
+                "type": "assistant",
+                "timestamp": "2026-05-12T10:01:00.000Z",
+                "message": {
+                    "model": "claude-opus-4-6",
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 2
+                    }
+                }
+            })
+            .to_string(),
+        ];
+        fs::write(&path, lines.join("\n")).unwrap();
+
+        let record = parse_session_file(&path)
+            .unwrap()
+            .expect("valid session record");
+
+        fs::remove_file(&path).ok();
+        fs::remove_dir(&dir).ok();
+
+        assert_eq!(record.id, "session-tool-result");
+        assert_eq!(record.message_count, 2);
+        assert_eq!(record.total_tokens, 12);
     }
 }

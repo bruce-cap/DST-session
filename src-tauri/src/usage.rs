@@ -68,9 +68,13 @@ pub fn refresh_token_usage_for_source(source: &str) -> Result<RefreshResult, Str
         .map(|item| item.session_count)
         .unwrap_or(0);
 
+    let session_records = crate::providers::ProviderRegistry::bootstrap()
+        .resolve_or_default(Some(source))
+        .list_sessions(None)?;
+    let session_refresh = crate::index::refresh_source(source, session_records)?;
+
     let records = load_provider_usage_records(source)?;
     let aggregated = aggregate_created_day(records);
-    let current = aggregated.iter().map(|row| row.session_count).sum();
 
     crate::index::replace_usage_daily_model(source, aggregated)?;
 
@@ -78,7 +82,7 @@ pub fn refresh_token_usage_for_source(source: &str) -> Result<RefreshResult, Str
         source: source.to_string(),
         refreshed_at_ms: crate::index::now_ms(),
         previous_count: previous,
-        current_count: current,
+        current_count: session_refresh.current_count,
     })
 }
 

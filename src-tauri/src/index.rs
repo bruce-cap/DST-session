@@ -6,6 +6,7 @@ use crate::model::{
 };
 use crate::paths::app_index_path;
 use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::BTreeMap;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -100,8 +101,9 @@ pub fn read_source_state(source: &str) -> Result<Option<SourceState>, String> {
 
 pub fn read_token_usage() -> Result<TokenUsageSummary, String> {
     let conn = open_index()?;
-    let by_provider = read_usage_by_provider(&conn)?;
-    let by_day = read_usage_by_day(&conn)?;
+    let session_stats = read_session_usage_stats(&conn)?;
+    let by_provider = read_usage_by_provider(&conn, &session_stats)?;
+    let by_day = read_usage_by_day(&conn, &session_stats)?;
     let by_model = read_usage_by_model(&conn)?;
     let by_model_by_day = read_usage_by_model_by_day(&conn)?;
     let total_tokens = by_provider.iter().map(|item| item.total_tokens).sum();
@@ -117,6 +119,25 @@ pub fn read_token_usage() -> Result<TokenUsageSummary, String> {
         by_model,
         by_model_by_day,
     })
+}
+
+#[derive(Default)]
+struct SessionUsageStats {
+    by_provider: BTreeMap<String, SessionProviderStats>,
+    by_day: BTreeMap<(String, String), SessionDayStats>,
+}
+
+#[derive(Default)]
+struct SessionProviderStats {
+    session_count: u64,
+    message_count: u64,
+    latest_activity: Option<String>,
+}
+
+#[derive(Default)]
+struct SessionDayStats {
+    session_count: u64,
+    message_count: u64,
 }
 
 pub fn replace_usage_daily_model(
@@ -159,14 +180,15 @@ fn session_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionR
     })
 }
 
-fn read_usage_by_provider(conn: &Connection) -> Result<Vec<ProviderTokenUsage>, String> {
+fn read_usage_by_provider(
+    conn: &Connection,
+    session_stats: &SessionUsageStats,
+) -> Result<Vec<ProviderTokenUsage>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT
                 source,
                 COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                COALESCE(SUM(session_count), 0) AS session_count,
-                COALESCE(SUM(message_count), 0) AS message_count,
                 MAX(date) AS latest_activity
             FROM usage_daily_model
             GROUP BY source
@@ -176,28 +198,64 @@ fn read_usage_by_provider(conn: &Connection) -> Result<Vec<ProviderTokenUsage>, 
 
     let rows = stmt
         .query_map([], |row| {
-            Ok(ProviderTokenUsage {
-                source: row.get(0)?,
-                total_tokens: row.get::<_, i64>(1)?.max(0) as u64,
-                session_count: row.get::<_, i64>(2)?.max(0) as u64,
-                message_count: row.get::<_, i64>(3)?.max(0) as u64,
-                latest_activity: row.get(4)?,
-            })
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?.max(0) as u64,
+                row.get::<_, Option<String>>(2)?,
+            ))
         })
         .map_err(|error| format!("读取 token provider 聚合失败: {error}"))?;
 
-    collect_rows(rows, "读取 token provider 聚合行失败")
+    let mut by_source = BTreeMap::<String, ProviderTokenUsage>::new();
+    for row in rows {
+        let (source, total_tokens, latest_activity) =
+            row.map_err(|error| format!("读取 token provider 聚合行失败: {error}"))?;
+        let session = session_stats.by_provider.get(&source);
+        by_source.insert(
+            source.clone(),
+            ProviderTokenUsage {
+                source,
+                total_tokens,
+                session_count: session.map(|item| item.session_count).unwrap_or(0),
+                message_count: session.map(|item| item.message_count).unwrap_or(0),
+                latest_activity: max_date_option(
+                    latest_activity,
+                    session.and_then(|item| item.latest_activity.clone()),
+                ),
+            },
+        );
+    }
+
+    for (source, session) in &session_stats.by_provider {
+        by_source.entry(source.clone()).or_insert_with(|| ProviderTokenUsage {
+            source: source.clone(),
+            total_tokens: 0,
+            session_count: session.session_count,
+            message_count: session.message_count,
+            latest_activity: session.latest_activity.clone(),
+        });
+    }
+
+    let mut values = by_source.into_values().collect::<Vec<_>>();
+    values.sort_by(|left, right| {
+        right
+            .total_tokens
+            .cmp(&left.total_tokens)
+            .then_with(|| left.source.cmp(&right.source))
+    });
+    Ok(values)
 }
 
-fn read_usage_by_day(conn: &Connection) -> Result<Vec<DailyTokenUsage>, String> {
+fn read_usage_by_day(
+    conn: &Connection,
+    session_stats: &SessionUsageStats,
+) -> Result<Vec<DailyTokenUsage>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT
                 date,
                 source,
-                COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                COALESCE(SUM(session_count), 0) AS session_count,
-                COALESCE(SUM(message_count), 0) AS message_count
+                COALESCE(SUM(total_tokens), 0) AS total_tokens
             FROM usage_daily_model
             GROUP BY date, source
             ORDER BY date ASC, source ASC",
@@ -206,17 +264,44 @@ fn read_usage_by_day(conn: &Connection) -> Result<Vec<DailyTokenUsage>, String> 
 
     let rows = stmt
         .query_map([], |row| {
-            Ok(DailyTokenUsage {
-                date: row.get(0)?,
-                source: row.get(1)?,
-                total_tokens: row.get::<_, i64>(2)?.max(0) as u64,
-                session_count: row.get::<_, i64>(3)?.max(0) as u64,
-                message_count: row.get::<_, i64>(4)?.max(0) as u64,
-            })
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?.max(0) as u64,
+            ))
         })
         .map_err(|error| format!("读取 daily token 聚合失败: {error}"))?;
 
-    collect_rows(rows, "读取 daily token 聚合行失败")
+    let mut by_key = BTreeMap::<(String, String), DailyTokenUsage>::new();
+    for row in rows {
+        let (date, source, total_tokens) =
+            row.map_err(|error| format!("读取 daily token 聚合行失败: {error}"))?;
+        let session = session_stats.by_day.get(&(date.clone(), source.clone()));
+        by_key.insert(
+            (date.clone(), source.clone()),
+            DailyTokenUsage {
+                date,
+                source,
+                total_tokens,
+                session_count: session.map(|item| item.session_count).unwrap_or(0),
+                message_count: session.map(|item| item.message_count).unwrap_or(0),
+            },
+        );
+    }
+
+    for ((date, source), session) in &session_stats.by_day {
+        by_key
+            .entry((date.clone(), source.clone()))
+            .or_insert_with(|| DailyTokenUsage {
+                date: date.clone(),
+                source: source.clone(),
+                total_tokens: 0,
+                session_count: session.session_count,
+                message_count: session.message_count,
+            });
+    }
+
+    Ok(by_key.into_values().collect())
 }
 
 fn read_usage_by_model(conn: &Connection) -> Result<Vec<ModelTokenUsage>, String> {
@@ -290,6 +375,72 @@ fn collect_rows<T>(
         values.push(row.map_err(|error| format!("{message}: {error}"))?);
     }
     Ok(values)
+}
+
+fn read_session_usage_stats(conn: &Connection) -> Result<SessionUsageStats, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT source, created_at, updated_at, message_count
+             FROM sessions
+             WHERE deleted_at_ms IS NULL",
+        )
+        .map_err(|error| format!("准备读取 session usage 统计失败: {error}"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, i64>(3)?.max(0) as u64,
+            ))
+        })
+        .map_err(|error| format!("读取 session usage 统计失败: {error}"))?;
+
+    let mut stats = SessionUsageStats::default();
+    for row in rows {
+        let (source, created_at, updated_at, message_count) =
+            row.map_err(|error| format!("读取 session usage 统计行失败: {error}"))?;
+        let date = created_at
+            .as_deref()
+            .and_then(crate::usage::date_from_rfc3339)
+            .or_else(|| {
+                updated_at
+                    .as_deref()
+                    .and_then(crate::usage::date_from_rfc3339)
+            });
+        let latest_activity = updated_at
+            .as_deref()
+            .and_then(crate::usage::date_from_rfc3339)
+            .or_else(|| {
+                created_at
+                    .as_deref()
+                    .and_then(crate::usage::date_from_rfc3339)
+            });
+
+        let provider_entry = stats.by_provider.entry(source.clone()).or_default();
+        provider_entry.session_count += 1;
+        provider_entry.message_count += message_count;
+        provider_entry.latest_activity =
+            max_date_option(provider_entry.latest_activity.clone(), latest_activity);
+
+        if let Some(date) = date {
+            let day_entry = stats.by_day.entry((date, source)).or_default();
+            day_entry.session_count += 1;
+            day_entry.message_count += message_count;
+        }
+    }
+
+    Ok(stats)
+}
+
+fn max_date_option(left: Option<String>, right: Option<String>) -> Option<String> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(if right > left { right } else { left }),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    }
 }
 
 fn replace_usage_daily_model_in_conn(
@@ -528,7 +679,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn token_usage_readers_aggregate_usage_daily_model_and_ignore_sessions() {
+    fn token_usage_readers_use_usage_totals_and_session_index_counts() {
         let conn = Connection::open_in_memory().expect("open in-memory index");
         ensure_schema(&conn).expect("create schema");
 
@@ -548,14 +699,38 @@ mod tests {
                 "session-model",
                 "default",
                 "/tmp/ignored.jsonl",
-                "2026-05-10T00:00:00Z",
+                "2026-05-11T00:00:00Z",
                 "2026-05-10T01:00:00Z",
                 99_i64,
                 9_999_i64,
                 1_i64,
             ],
         )
-        .expect("insert ignored session usage");
+        .expect("insert claude session row");
+        conn.execute(
+            "INSERT INTO sessions (
+                source, id, short_id, title, preview, workspace, model, mode, path,
+                created_at, updated_at, message_count, total_tokens, invalid_reason,
+                file_mtime_ms, file_size, indexed_at_ms, deleted_at_ms
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, NULL, NULL, ?14, NULL)",
+            params![
+                "codex",
+                "codex-session",
+                "codex",
+                "Codex session row",
+                "codex",
+                "workspace",
+                "gpt",
+                "default",
+                "/tmp/codex.jsonl",
+                "2026-05-11T00:00:00Z",
+                "2026-05-11T01:00:00Z",
+                7_i64,
+                123_i64,
+                1_i64,
+            ],
+        )
+        .expect("insert codex session row");
 
         conn.execute(
             "INSERT INTO usage_daily_model (
@@ -569,7 +744,9 @@ mod tests {
         )
         .expect("insert model daily usage");
 
-        let provider_rows = read_usage_by_provider(&conn)
+        let session_stats = read_session_usage_stats(&conn).expect("read session stats");
+
+        let provider_rows = read_usage_by_provider(&conn, &session_stats)
             .expect("read provider usage")
             .into_iter()
             .map(|row| {
@@ -588,21 +765,21 @@ mod tests {
                 (
                     "claude".to_string(),
                     1_000,
-                    10,
-                    100,
+                    1,
+                    99,
                     Some("2026-05-12".to_string()),
                 ),
                 (
                     "codex".to_string(),
                     400,
-                    4,
-                    40,
+                    1,
+                    7,
                     Some("2026-05-11".to_string()),
                 ),
             ]
         );
 
-        let daily_rows = read_usage_by_day(&conn)
+        let daily_rows = read_usage_by_day(&conn, &session_stats)
             .expect("read daily usage")
             .into_iter()
             .map(|row| {
@@ -618,9 +795,9 @@ mod tests {
         assert_eq!(
             daily_rows,
             vec![
-                ("2026-05-11".to_string(), "claude".to_string(), 800, 8, 80),
-                ("2026-05-11".to_string(), "codex".to_string(), 400, 4, 40),
-                ("2026-05-12".to_string(), "claude".to_string(), 200, 2, 20),
+                ("2026-05-11".to_string(), "claude".to_string(), 800, 1, 99),
+                ("2026-05-11".to_string(), "codex".to_string(), 400, 1, 7),
+                ("2026-05-12".to_string(), "claude".to_string(), 200, 0, 0),
             ]
         );
 
