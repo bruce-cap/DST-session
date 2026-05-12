@@ -565,20 +565,18 @@ mod tests {
             })
             .to_string(),
         ];
-        let subagent_lines = [
-            json!({
-                "type": "assistant",
-                "timestamp": "2026-05-12T10:00:00Z",
-                "message": {
-                    "model": "claude-haiku-4-5",
-                    "usage": {
-                        "input_tokens": 7,
-                        "output_tokens": 3
-                    }
+        let subagent_lines = [json!({
+            "type": "assistant",
+            "timestamp": "2026-05-12T10:00:00Z",
+            "message": {
+                "model": "claude-haiku-4-5",
+                "usage": {
+                    "input_tokens": 7,
+                    "output_tokens": 3
                 }
-            })
-            .to_string(),
-        ];
+            }
+        })
+        .to_string()];
         fs::write(&main_path, main_lines.join("\n")).unwrap();
         fs::write(&subagent_path, subagent_lines.join("\n")).unwrap();
 
@@ -592,8 +590,17 @@ mod tests {
         fs::remove_dir(&root).ok();
 
         assert_eq!(records.len(), 3);
-        assert!(records.iter().any(|record| record.usage_id.contains("subagents") && !record.usage_id.contains("#model:")));
-        assert!(records.iter().filter(|record| record.usage_id.contains("main.jsonl#model:")).count() == 2);
+        assert!(records
+            .iter()
+            .any(|record| record.usage_id.contains("subagents")
+                && !record.usage_id.contains("#model:")));
+        assert!(
+            records
+                .iter()
+                .filter(|record| record.usage_id.contains("main.jsonl#model:"))
+                .count()
+                == 2
+        );
         assert!(records.iter().any(|record| {
             record.model == "claude-opus-4-6"
                 && record.total_tokens == 120
@@ -601,12 +608,12 @@ mod tests {
                 && record.created_at.as_deref() == Some("2026-05-11T10:00:00Z")
                 && record.fallback_at.as_deref() == Some("2026-05-11T10:02:00Z")
         }));
-        assert!(records.iter().any(|record| {
-            record.model == "claude-sonnet-4-6" && record.total_tokens == 35
-        }));
-        assert!(records.iter().any(|record| {
-            record.model == "claude-haiku-4-5" && record.total_tokens == 10
-        }));
+        assert!(records
+            .iter()
+            .any(|record| { record.model == "claude-sonnet-4-6" && record.total_tokens == 35 }));
+        assert!(records
+            .iter()
+            .any(|record| { record.model == "claude-haiku-4-5" && record.total_tokens == 10 }));
     }
 
     #[test]

@@ -756,16 +756,14 @@ mod tests {
 
         assert_eq!(
             rows,
-            vec![
-                (
-                    "claude".to_string(),
-                    "2026-05-12".to_string(),
-                    "sonnet".to_string(),
-                    100,
-                    2,
-                    7,
-                ),
-            ]
+            vec![(
+                "claude".to_string(),
+                "2026-05-12".to_string(),
+                "sonnet".to_string(),
+                100,
+                2,
+                7,
+            ),]
         );
     }
 

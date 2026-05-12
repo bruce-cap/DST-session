@@ -292,8 +292,14 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].source, "deepseek");
         assert_eq!(records[0].usage_id, "session-1");
-        assert_eq!(records[0].created_at.as_deref(), Some("2026-05-10T01:00:00Z"));
-        assert_eq!(records[0].fallback_at.as_deref(), Some("2026-05-11T01:00:00Z"));
+        assert_eq!(
+            records[0].created_at.as_deref(),
+            Some("2026-05-10T01:00:00Z")
+        );
+        assert_eq!(
+            records[0].fallback_at.as_deref(),
+            Some("2026-05-11T01:00:00Z")
+        );
         assert_eq!(records[0].model, "deepseek-v3");
         assert_eq!(records[0].total_tokens, 321);
         assert_eq!(records[0].message_count, 7);

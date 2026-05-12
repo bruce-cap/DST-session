@@ -20,3 +20,5 @@ sessions/
 /.kiro/
 /.claude/
 /.playwright-mcp/
+CLAUDE.md
+AGENTS.md

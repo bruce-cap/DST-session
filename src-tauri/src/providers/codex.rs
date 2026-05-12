@@ -180,7 +180,7 @@ fn read_codex_threads_for_usage(
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, model, tokens_used, created_at_ms, updated_at_ms, archived
+            "SELECT id, model, tokens_used, created_at_ms, updated_at_ms, rollout_path
              FROM threads
              WHERE tokens_used > 0",
         )
@@ -190,6 +190,12 @@ fn read_codex_threads_for_usage(
         .query_map([], |row| {
             let model = row.get::<_, Option<String>>(1)?.unwrap_or_default();
             let tokens_used = row.get::<_, Option<i64>>(2)?.unwrap_or_default().max(0) as u64;
+            let rollout_path = row.get::<_, Option<String>>(5)?.unwrap_or_default();
+            let message_count = if rollout_path.trim().is_empty() {
+                0
+            } else {
+                codex_rollout_usage(Path::new(&rollout_path)).message_count
+            };
             Ok(crate::usage::UsageRecord {
                 source: "codex".to_string(),
                 usage_id: row.get::<_, String>(0)?,
@@ -201,7 +207,7 @@ fn read_codex_threads_for_usage(
                     model
                 },
                 total_tokens: tokens_used,
-                message_count: 0,
+                message_count,
             })
         })
         .map_err(|error| format!("枚举 Codex usage threads 失败: {error}"))?;
@@ -272,14 +278,18 @@ fn codex_rollout_usage(path: &Path) -> CodexUsage {
 
     let mut usage = CodexUsage::default();
     let mut seen_usage = HashSet::new();
+    let mut event_message_count = 0_u64;
+    let mut fallback_message_count = 0_u64;
 
     for line in content.lines().filter(|line| !line.trim().is_empty()) {
         let Ok(json) = serde_json::from_str::<Value>(line) else {
             continue;
         };
 
-        if codex_is_message_record(&json) {
-            usage.message_count += 1;
+        if codex_is_primary_message_record(&json) {
+            event_message_count += 1;
+        } else if codex_is_fallback_message_record(&json) {
+            fallback_message_count += 1;
         }
         if usage.model.is_empty() {
             usage.model = codex_model(&json);
@@ -310,6 +320,12 @@ fn codex_rollout_usage(path: &Path) -> CodexUsage {
         });
     }
 
+    usage.message_count = if event_message_count > 0 {
+        event_message_count
+    } else {
+        fallback_message_count
+    };
+
     usage
 }
 
@@ -325,11 +341,36 @@ fn codex_model(json: &Value) -> String {
         .unwrap_or_default()
 }
 
-fn codex_is_message_record(json: &Value) -> bool {
+fn codex_is_primary_message_record(json: &Value) -> bool {
+    if json.get("type").and_then(Value::as_str) != Some("event_msg") {
+        return false;
+    }
+
     matches!(
-        json.get("type").and_then(Value::as_str),
-        Some("message") | Some("user_message") | Some("assistant_message")
+        json.get("payload")
+            .and_then(|payload| payload.get("type"))
+            .and_then(Value::as_str),
+        Some("user_message") | Some("agent_message")
     )
+}
+
+fn codex_is_fallback_message_record(json: &Value) -> bool {
+    match json.get("type").and_then(Value::as_str) {
+        Some("user_message") | Some("assistant_message") => true,
+        Some("message") => matches!(
+            json.get("role").and_then(Value::as_str),
+            Some("user") | Some("assistant")
+        ),
+        Some("response_item") => {
+            let payload = json.get("payload").unwrap_or(&Value::Null);
+            payload.get("type").and_then(Value::as_str) == Some("message")
+                && matches!(
+                    payload.get("role").and_then(Value::as_str),
+                    Some("user") | Some("assistant")
+                )
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -403,34 +444,51 @@ mod tests {
     }
 
     #[test]
-    fn list_usage_records_from_db_reads_all_positive_threads_without_rollout() {
+    fn list_usage_records_from_db_reads_all_positive_threads_and_counts_rollout_messages() {
         let dir =
             std::env::temp_dir().join(format!("dst-session-codex-db-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("state_5.sqlite");
+        let rollout_path = dir.join("rollout.jsonl");
+        fs::write(
+            &rollout_path,
+            [
+                r#"{"timestamp":"2026-05-12T00:00:00Z","type":"response_item","payload":{"type":"message","role":"developer","content":[]}}"#,
+                r#"{"timestamp":"2026-05-12T00:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[]}}"#,
+                r#"{"timestamp":"2026-05-12T00:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"hello"}}"#,
+                r#"{"timestamp":"2026-05-12T00:00:02Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[]}}"#,
+                r#"{"timestamp":"2026-05-12T00:00:02Z","type":"event_msg","payload":{"type":"agent_message","message":"hi"}}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let rollout_sql = rollout_path.to_string_lossy().replace('\\', "\\\\").replace('\'', "''");
         {
             let conn = rusqlite::Connection::open(&db_path).unwrap();
-            conn.execute_batch(
+            conn.execute_batch(&format!(
                 "CREATE TABLE threads (
                     id TEXT NOT NULL,
                     model TEXT,
                     tokens_used INTEGER,
                     created_at_ms INTEGER,
                     updated_at_ms INTEGER,
+                    rollout_path TEXT,
                     archived INTEGER NOT NULL DEFAULT 0
                 );
-                INSERT INTO threads (id, model, tokens_used, created_at_ms, updated_at_ms, archived)
+                INSERT INTO threads (id, model, tokens_used, created_at_ms, updated_at_ms, rollout_path, archived)
                 VALUES
-                    ('active-thread', 'gpt-5', 123, 0, 1000, 0),
-                    ('archived-thread', '', 456, 2000, 3000, 1),
-                    ('empty-thread', 'gpt-5', 0, 4000, 5000, 0);",
-            )
+                    ('active-thread', 'gpt-5', 123, 0, 1000, '{}', 0),
+                    ('archived-thread', '', 456, 2000, 3000, '', 1),
+                    ('empty-thread', 'gpt-5', 0, 4000, 5000, '', 0);",
+                rollout_sql
+            ))
             .unwrap();
         }
 
         let mut records = list_usage_records_from_db(Some(db_path.clone())).unwrap();
         records.sort_by(|left, right| left.usage_id.cmp(&right.usage_id));
 
+        fs::remove_file(&rollout_path).ok();
         fs::remove_file(&db_path).ok();
         fs::remove_dir(&dir).ok();
 
@@ -445,10 +503,40 @@ mod tests {
             || value.starts_with("1969-12-31T")));
         assert_eq!(records[0].model, "gpt-5");
         assert_eq!(records[0].total_tokens, 123);
-        assert_eq!(records[0].message_count, 0);
+        assert_eq!(records[0].message_count, 2);
         assert_eq!(records[1].usage_id, "archived-thread");
         assert_eq!(records[1].model, "unknown");
         assert_eq!(records[1].total_tokens, 456);
+        assert_eq!(records[1].message_count, 0);
+    }
+
+    #[test]
+    fn codex_rollout_usage_counts_event_messages_without_response_item_duplicates() {
+        let dir = std::env::temp_dir().join(format!(
+            "dst-session-codex-message-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rollout.jsonl");
+        fs::write(
+            &path,
+            [
+                r#"{"timestamp":"2026-05-12T00:00:00Z","type":"response_item","payload":{"type":"message","role":"developer","content":[]}}"#,
+                r#"{"timestamp":"2026-05-12T00:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[]}}"#,
+                r#"{"timestamp":"2026-05-12T00:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"hello"}}"#,
+                r#"{"timestamp":"2026-05-12T00:00:02Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[]}}"#,
+                r#"{"timestamp":"2026-05-12T00:00:02Z","type":"event_msg","payload":{"type":"agent_message","message":"hi"}}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let usage = codex_rollout_usage(&path);
+
+        fs::remove_file(&path).ok();
+        fs::remove_dir(&dir).ok();
+
+        assert_eq!(usage.message_count, 2);
     }
 
     #[test]
