@@ -132,10 +132,23 @@ export function formatDateTime(value: string | null, locale: Locale = "zh"): str
 }
 
 export function formatTokenCount(tokens: number): string {
-  if (tokens >= 1000) {
-    return `${Math.round(tokens / 1000)}k`;
+  if (tokens >= 1_000_000) {
+    return `${formatTokenUnit(tokens / 1_000_000)}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${formatTokenUnit(tokens / 1_000)}K`;
   }
   return `${tokens}`;
+}
+
+function formatTokenUnit(value: number): string {
+  if (value >= 100) {
+    return `${Math.round(value)}`;
+  }
+  if (value >= 10) {
+    return value.toFixed(1).replace(/\.0$/, "");
+  }
+  return value.toFixed(2).replace(/\.0+$/, "").replace(/(\.\d)0$/, "$1");
 }
 
 export function compareUpdatedDesc(left: SessionRecord, right: SessionRecord): number {

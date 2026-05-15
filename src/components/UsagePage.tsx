@@ -175,7 +175,7 @@ function ModelsPanel(props: {
           const height = props.maxDailyTokens === 0 ? 4 : Math.max(4, Math.round((item.totalTokens / props.maxDailyTokens) * 154));
           return (
             <div key={item.date} className="usage-bar-wrap" title={`${item.date} · ${number(item.totalTokens)} tokens`}>
-              <div className="usage-bar-value">{compact(item.totalTokens)}</div>
+              <div className="usage-bar-value">{formatTokenCount(item.totalTokens)}</div>
               <div className="usage-bar" style={{ height }} />
               <div className="usage-bar-label">{shortDate(item.date, props.locale)}</div>
             </div>
@@ -220,12 +220,6 @@ function UsageEmpty(props: { title: string; hint?: string }) {
 
 function number(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
-}
-
-function compact(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  return String(value);
 }
 
 function percent(value: number): string {

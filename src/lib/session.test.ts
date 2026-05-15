@@ -148,7 +148,9 @@ describe("session helpers", () => {
 
   it("formats date and token counts for compact display", () => {
     expect(formatDateTime("2026-05-07T16:45:29Z")).toContain("2026");
-    expect(formatTokenCount(23876)).toBe("24k");
+    expect(formatTokenCount(999)).toBe("999");
+    expect(formatTokenCount(23876)).toBe("23.9K");
+    expect(formatTokenCount(1_250_000)).toBe("1.25M");
     expect(getGroupKey(sampleSession({ model: "" }), "model", new Set())).toEqual({
       key: "(no model)",
       label: "(no model)"
