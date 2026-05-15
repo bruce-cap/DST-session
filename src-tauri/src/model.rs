@@ -44,6 +44,8 @@ pub struct SessionRecord {
 #[serde(rename_all = "camelCase")]
 pub struct TokenUsageSummary {
     pub total_tokens: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
     pub total_sessions: u64,
     pub total_messages: u64,
     pub by_provider: Vec<ProviderTokenUsage>,
@@ -56,6 +58,8 @@ pub struct TokenUsageSummary {
 #[serde(rename_all = "camelCase")]
 pub struct ProviderTokenUsage {
     pub source: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
     pub total_tokens: u64,
     pub session_count: u64,
     pub message_count: u64,
@@ -67,6 +71,8 @@ pub struct ProviderTokenUsage {
 pub struct DailyTokenUsage {
     pub date: String,
     pub source: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
     pub total_tokens: u64,
     pub session_count: u64,
     pub message_count: u64,
@@ -77,6 +83,8 @@ pub struct DailyTokenUsage {
 pub struct ModelTokenUsage {
     pub source: String,
     pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
     pub total_tokens: u64,
     pub session_count: u64,
     pub message_count: u64,
@@ -88,6 +96,8 @@ pub struct ModelDailyTokenUsage {
     pub date: String,
     pub source: String,
     pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
     pub total_tokens: u64,
     pub session_count: u64,
     pub message_count: u64,

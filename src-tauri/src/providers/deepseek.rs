@@ -152,6 +152,9 @@ fn read_deepseek_metadata_usage(path: &Path) -> Result<crate::usage::UsageRecord
         .map_err(|error| format!("JSON 解析失败 {}: {error}", path.display()))?;
     let metadata = json.get("metadata").unwrap_or(&Value::Null);
     let model = string_at(metadata, "model").unwrap_or_default();
+    let total_tokens = number_at(metadata, "total_tokens").unwrap_or(0);
+    let output_tokens = number_at(metadata, "output_tokens").unwrap_or(0);
+    let input_tokens = number_at(metadata, "input_tokens").unwrap_or_else(|| total_tokens.saturating_sub(output_tokens));
 
     Ok(crate::usage::UsageRecord {
         source: "deepseek".to_string(),
@@ -163,7 +166,9 @@ fn read_deepseek_metadata_usage(path: &Path) -> Result<crate::usage::UsageRecord
         } else {
             model
         },
-        total_tokens: number_at(metadata, "total_tokens").unwrap_or(0),
+        input_tokens,
+        output_tokens,
+        total_tokens,
         message_count: number_at(metadata, "message_count").unwrap_or(0),
     })
 }
@@ -301,6 +306,8 @@ mod tests {
             Some("2026-05-11T01:00:00Z")
         );
         assert_eq!(records[0].model, "deepseek-v3");
+        assert_eq!(records[0].input_tokens, 321);
+        assert_eq!(records[0].output_tokens, 0);
         assert_eq!(records[0].total_tokens, 321);
         assert_eq!(records[0].message_count, 7);
     }

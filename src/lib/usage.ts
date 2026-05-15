@@ -32,10 +32,14 @@ export function filterModelsBySourceAndRange(
     const bucket = buckets.get(item.model) ?? {
       source,
       model: item.model,
+      inputTokens: 0,
+      outputTokens: 0,
       totalTokens: 0,
       sessionCount: 0,
       messageCount: 0
     };
+    bucket.inputTokens += item.inputTokens;
+    bucket.outputTokens += item.outputTokens;
     bucket.totalTokens += item.totalTokens;
     bucket.sessionCount += item.sessionCount;
     bucket.messageCount += item.messageCount;
@@ -85,6 +89,8 @@ export function buildHeatmapDays(items: DailyTokenUsage[], range: UsageRange): D
     days.push(buckets.get(date) ?? {
       date,
       source: items[0].source,
+      inputTokens: 0,
+      outputTokens: 0,
       totalTokens: 0,
       sessionCount: 0,
       messageCount: 0

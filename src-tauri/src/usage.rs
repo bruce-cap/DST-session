@@ -9,6 +9,8 @@ pub struct UsageRecord {
     pub created_at: Option<String>,
     pub fallback_at: Option<String>,
     pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
     pub total_tokens: u64,
     pub message_count: u64,
 }
@@ -96,7 +98,7 @@ pub fn load_provider_usage_records(source: &str) -> Result<Vec<UsageRecord>, Str
 }
 
 pub fn aggregate_created_day(records: Vec<UsageRecord>) -> Vec<ModelDailyTokenUsage> {
-    let mut buckets: BTreeMap<UsageBucketKey, (u64, u64, u64)> = BTreeMap::new();
+    let mut buckets: BTreeMap<UsageBucketKey, (u64, u64, u64, u64, u64)> = BTreeMap::new();
     let mut counted_units: BTreeSet<UsageUnitKey> = BTreeSet::new();
 
     for record in records {
@@ -129,21 +131,25 @@ pub fn aggregate_created_day(records: Vec<UsageRecord>) -> Vec<ModelDailyTokenUs
             },
         };
 
-        let entry = buckets.entry(key).or_insert((0, 0, 0));
-        entry.0 += record.total_tokens;
+        let entry = buckets.entry(key).or_insert((0, 0, 0, 0, 0));
+        entry.0 += record.input_tokens;
+        entry.1 += record.output_tokens;
+        entry.2 += record.total_tokens;
         if count_unit {
-            entry.1 += 1;
-            entry.2 += record.message_count;
+            entry.3 += 1;
+            entry.4 += record.message_count;
         }
     }
 
     buckets
         .into_iter()
         .map(
-            |(key, (total_tokens, session_count, message_count))| ModelDailyTokenUsage {
+            |(key, (input_tokens, output_tokens, total_tokens, session_count, message_count))| ModelDailyTokenUsage {
                 date: key.date,
                 source: key.source,
                 model: key.model,
+                input_tokens,
+                output_tokens,
                 total_tokens,
                 session_count,
                 message_count,
@@ -165,6 +171,8 @@ mod tests {
                 created_at: Some("2026-05-01T10:00:00Z".to_string()),
                 fallback_at: Some("2026-05-03T10:00:00Z".to_string()),
                 model: "gpt-5.5".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 100,
                 message_count: 2,
             },
@@ -174,6 +182,8 @@ mod tests {
                 created_at: Some("2026-05-01T12:00:00Z".to_string()),
                 fallback_at: None,
                 model: "gpt-5.5".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 50,
                 message_count: 1,
             },
@@ -183,6 +193,8 @@ mod tests {
                 created_at: Some("2026-05-02T00:00:00Z".to_string()),
                 fallback_at: None,
                 model: "deepseek-v4-pro".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 25,
                 message_count: 4,
             },
@@ -212,6 +224,8 @@ mod tests {
                 created_at: Some("2026-05-01T10:00:00Z".to_string()),
                 fallback_at: None,
                 model: "opus".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 100,
                 message_count: 3,
             },
@@ -221,6 +235,8 @@ mod tests {
                 created_at: Some("2026-05-01T10:00:00Z".to_string()),
                 fallback_at: None,
                 model: "sonnet".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 50,
                 message_count: 3,
             },
@@ -244,6 +260,8 @@ mod tests {
                 created_at: None,
                 fallback_at: Some("2026-05-04T00:00:00Z".to_string()),
                 model: "  ".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 12,
                 message_count: 3,
             },
@@ -253,6 +271,8 @@ mod tests {
                 created_at: Some("2026-05-04T00:00:00Z".to_string()),
                 fallback_at: None,
                 model: "sonnet".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 0,
                 message_count: 9,
             },
@@ -262,6 +282,8 @@ mod tests {
                 created_at: Some("not-a-date".to_string()),
                 fallback_at: None,
                 model: "sonnet".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 10,
                 message_count: 1,
             },

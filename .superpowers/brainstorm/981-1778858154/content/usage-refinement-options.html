@@ -1,0 +1,52 @@
+<h2>Usage chart refinement</h2>
+<p class="subtitle">Two options for fixing DeepSeek in/out, blue-only model colors, and tooltip clipping. Click the one that feels closest.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding:18px;background:#f8fafc;border-radius:16px;color:#111827;font-family:system-ui">
+        <div style="display:flex;justify-content:space-between;margin-bottom:18px"><b>Models</b><span style="background:#e5e7eb;padding:4px 12px;border-radius:8px">All</span></div>
+        <div style="height:150px;display:flex;align-items:end;gap:12px;border-bottom:1px solid #e5e7eb;padding:0 12px 8px;position:relative">
+          <div style="position:absolute;left:260px;top:12px;background:white;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;box-shadow:0 12px 28px #0002;min-width:170px"><b>May 11</b><br><span style="color:#2563eb">■</span> gpt-5.5 <b style="float:right">11.3M</b><br><span style="color:#93c5fd">■</span> claude-opus <b style="float:right">9.6M</b><br><small>9 sessions</small></div>
+          <div style="height:40px;width:24px;background:#4f83dc;border-radius:5px 5px 1px 1px"></div>
+          <div style="height:86px;width:24px;background:linear-gradient(to top,#4f83dc 0 70%,#93c5fd 70% 100%);border-radius:5px 5px 1px 1px"></div>
+          <div style="height:125px;width:24px;background:linear-gradient(to top,#4f83dc 0 58%,#7aa5ea 58% 86%,#cfe2ff 86% 100%);border-radius:5px 5px 1px 1px"></div>
+          <div style="height:68px;width:24px;background:#7aa5ea;border-radius:5px 5px 1px 1px"></div>
+        </div>
+        <div style="margin-top:14px;display:grid;gap:7px;font-size:13px">
+          <div><span style="color:#4f83dc">■</span> gpt-5.5 <span style="float:right">18.0M in · 777.8k out · 24 sessions&nbsp;&nbsp;<b>31.3%</b></span></div>
+          <div><span style="color:#93c5fd">■</span> claude-opus-4-6 <span style="float:right">10.7M in · 818.5k out · 34 sessions&nbsp;&nbsp;<b>19.3%</b></span></div>
+          <div><span style="color:#dbeafe">■</span> deepseek-v4-pro <span style="float:right">725.2k in · 105.4k out · 4 sessions&nbsp;&nbsp;<b>1.4%</b></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Minimal patch</h3>
+      <p>Keep current layout. DeepSeek derives in/out from metadata when available, otherwise treats total as input. Tooltip moves left/right via CSS classes based on bar index.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding:18px;background:#f8fafc;border-radius:16px;color:#111827;font-family:system-ui">
+        <div style="display:flex;justify-content:space-between;margin-bottom:18px"><b>Models</b><span style="background:#e5e7eb;padding:4px 12px;border-radius:8px">All</span></div>
+        <div style="height:150px;display:flex;align-items:end;gap:12px;border-bottom:1px solid #e5e7eb;padding:0 12px 8px;position:relative;overflow:visible">
+          <div style="position:absolute;right:36px;top:8px;background:white;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;box-shadow:0 12px 28px #0002;min-width:190px"><b>May 11</b><br><span style="color:#2563eb">■</span> gpt-5.5 <b style="float:right">11.3M</b><br><span style="color:#60a5fa">■</span> gpt-5.4 <b style="float:right">668.1k</b><br><span style="color:#bfdbfe">■</span> others <b style="float:right">55.2k</b><br><small>9 sessions</small></div>
+          <div style="height:36px;width:24px;background:#3f7fe0;border-radius:5px 5px 1px 1px"></div>
+          <div style="height:78px;width:24px;background:linear-gradient(to top,#3f7fe0 0 72%,#6ea0ea 72% 100%);border-radius:5px 5px 1px 1px"></div>
+          <div style="height:125px;width:24px;background:linear-gradient(to top,#3f7fe0 0 55%,#6ea0ea 55% 78%,#9fc3f5 78% 92%,#dbeafe 92% 100%);border-radius:5px 5px 1px 1px"></div>
+          <div style="height:68px;width:24px;background:#6ea0ea;border-radius:5px 5px 1px 1px"></div>
+        </div>
+        <div style="margin-top:14px;display:grid;gap:7px;font-size:13px">
+          <div><span style="color:#3f7fe0">■</span> gpt-5.5 <span style="float:right">18.0M in · 777.8k out · 24 sessions&nbsp;&nbsp;<b>31.3%</b></span></div>
+          <div><span style="color:#9fc3f5">■</span> claude-opus-4-6 <span style="float:right">10.7M in · 818.5k out · 34 sessions&nbsp;&nbsp;<b>19.3%</b></span></div>
+          <div><span style="color:#eff6ff">■</span> older/small models <span style="float:right">67.4k in · 94 out · 1 session&nbsp;&nbsp;<b>0.1%</b></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Recommended polish</h3>
+      <p>Blue-only palette with deliberate fading for lower-ranked models. Tooltip placement is computed from the day position, so edge bars open inward and never clip.</p>
+    </div>
+  </div>
+</div>

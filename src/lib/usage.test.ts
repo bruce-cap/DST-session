@@ -3,21 +3,21 @@ import { buildHeatmapDays, filterDailyBySourceAndRange, filterModelsBySourceAndR
 import type { DailyTokenUsage, ModelDailyTokenUsage, ModelTokenUsage } from "../types";
 
 const daily: DailyTokenUsage[] = [
-  { date: "2026-05-01", source: "codex", totalTokens: 100, sessionCount: 1, messageCount: 2 },
-  { date: "2026-05-05", source: "claude", totalTokens: 500, sessionCount: 1, messageCount: 2 },
-  { date: "2026-05-08", source: "codex", totalTokens: 200, sessionCount: 2, messageCount: 4 },
-  { date: "2026-05-10", source: "codex", totalTokens: 300, sessionCount: 3, messageCount: 6 }
+  { date: "2026-05-01", source: "codex", inputTokens: 0, outputTokens: 0, totalTokens: 100, sessionCount: 1, messageCount: 2 },
+  { date: "2026-05-05", source: "claude", inputTokens: 0, outputTokens: 0, totalTokens: 500, sessionCount: 1, messageCount: 2 },
+  { date: "2026-05-08", source: "codex", inputTokens: 0, outputTokens: 0, totalTokens: 200, sessionCount: 2, messageCount: 4 },
+  { date: "2026-05-10", source: "codex", inputTokens: 0, outputTokens: 0, totalTokens: 300, sessionCount: 3, messageCount: 6 }
 ];
 
 const allTimeModels: ModelTokenUsage[] = [
-  { source: "codex", model: "gpt-5", totalTokens: 600, sessionCount: 6, messageCount: 12 },
-  { source: "claude", model: "claude-opus", totalTokens: 500, sessionCount: 1, messageCount: 2 }
+  { source: "codex", model: "gpt-5", inputTokens: 0, outputTokens: 0, totalTokens: 600, sessionCount: 6, messageCount: 12 },
+  { source: "claude", model: "claude-opus", inputTokens: 0, outputTokens: 0, totalTokens: 500, sessionCount: 1, messageCount: 2 }
 ];
 
 const dailyModels: ModelDailyTokenUsage[] = [
-  { date: "2026-05-01", source: "codex", model: "gpt-5", totalTokens: 100, sessionCount: 1, messageCount: 2 },
-  { date: "2026-05-08", source: "codex", model: "gpt-5", totalTokens: 200, sessionCount: 2, messageCount: 4 },
-  { date: "2026-05-10", source: "codex", model: "gpt-4", totalTokens: 300, sessionCount: 3, messageCount: 6 }
+  { date: "2026-05-01", source: "codex", model: "gpt-5", inputTokens: 0, outputTokens: 0, totalTokens: 100, sessionCount: 1, messageCount: 2 },
+  { date: "2026-05-08", source: "codex", model: "gpt-5", inputTokens: 0, outputTokens: 0, totalTokens: 200, sessionCount: 2, messageCount: 4 },
+  { date: "2026-05-10", source: "codex", model: "gpt-4", inputTokens: 0, outputTokens: 0, totalTokens: 300, sessionCount: 3, messageCount: 6 }
 ];
 
 describe("usage helpers", () => {
@@ -36,8 +36,8 @@ describe("usage helpers", () => {
 
   it("recomputes model totals for finite ranges", () => {
     expect(filterModelsBySourceAndRange(allTimeModels, dailyModels, "codex", "7d")).toEqual([
-      { source: "codex", model: "gpt-4", totalTokens: 300, sessionCount: 3, messageCount: 6 },
-      { source: "codex", model: "gpt-5", totalTokens: 200, sessionCount: 2, messageCount: 4 }
+      { source: "codex", model: "gpt-4", inputTokens: 0, outputTokens: 0, totalTokens: 300, sessionCount: 3, messageCount: 6 },
+      { source: "codex", model: "gpt-5", inputTokens: 0, outputTokens: 0, totalTokens: 200, sessionCount: 2, messageCount: 4 }
     ]);
   });
 

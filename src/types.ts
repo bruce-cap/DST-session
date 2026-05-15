@@ -31,6 +31,8 @@ export interface SessionGroup {
 }
 
 export interface TokenUsageSummary {
+  inputTokens: number;
+  outputTokens: number;
   totalTokens: number;
   totalSessions: number;
   totalMessages: number;
@@ -42,6 +44,8 @@ export interface TokenUsageSummary {
 
 export interface ProviderTokenUsage {
   source: SessionSource;
+  inputTokens: number;
+  outputTokens: number;
   totalTokens: number;
   sessionCount: number;
   messageCount: number;
@@ -51,6 +55,8 @@ export interface ProviderTokenUsage {
 export interface DailyTokenUsage {
   date: string;
   source: SessionSource;
+  inputTokens: number;
+  outputTokens: number;
   totalTokens: number;
   sessionCount: number;
   messageCount: number;
@@ -59,6 +65,8 @@ export interface DailyTokenUsage {
 export interface ModelTokenUsage {
   source: SessionSource;
   model: string;
+  inputTokens: number;
+  outputTokens: number;
   totalTokens: number;
   sessionCount: number;
   messageCount: number;
@@ -68,6 +76,8 @@ export interface ModelDailyTokenUsage {
   date: string;
   source: SessionSource;
   model: string;
+  inputTokens: number;
+  outputTokens: number;
   totalTokens: number;
   sessionCount: number;
   messageCount: number;

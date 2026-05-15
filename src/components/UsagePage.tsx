@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type WheelEvent, useEffect, useMemo, useRef, useState } from "react";
 import claudeLogo from "../assets/providers/claude.svg";
 import codexLogo from "../assets/providers/codex.svg";
 import deepseekLogo from "../assets/providers/deepseek.svg";
@@ -6,7 +6,7 @@ import { useTokenUsage } from "../hooks/useTokenUsage";
 import { formatTokenCount } from "../lib/session";
 import { buildHeatmapDays, filterDailyBySourceAndRange, filterModelsBySourceAndRange, heatmapLevel, providerSummaryForSource, usageShare } from "../lib/usage";
 import type { Locale, TFunction } from "../lib/i18n";
-import type { DailyTokenUsage, ProviderDescriptor, SessionSource, UsageRange, UsageTab } from "../types";
+import type { DailyTokenUsage, ModelDailyTokenUsage, ModelTokenUsage, ProviderDescriptor, SessionSource, UsageRange, UsageTab } from "../types";
 import { Icon } from "./Icon";
 
 const providerLogo: Record<ProviderDescriptor["iconKey"], string> = {
@@ -49,6 +49,7 @@ export function UsagePage(props: {
   const maxDailyTokens = Math.max(...daily.map((item) => item.totalTokens), 0);
   const maxHeatmapTokens = Math.max(...heatmapDays.map((item) => item.totalTokens), 0);
   const modelTotal = models.reduce((sum, item) => sum + item.totalTokens, 0);
+  const modelDaily = usage ? usage.byModelByDay.filter((item) => item.source === source) : [];
 
   return (
     <section className="usage-page">
@@ -117,7 +118,7 @@ export function UsagePage(props: {
               {tab === "overview" ? (
                 <OverviewPanel daily={daily} heatmapDays={heatmapDays} maxHeatmapTokens={maxHeatmapTokens} provider={provider} t={props.t} />
               ) : (
-                <ModelsPanel daily={daily} maxDailyTokens={maxDailyTokens} models={models} modelTotal={modelTotal} locale={props.locale} t={props.t} />
+                <ModelsPanel daily={daily} modelDaily={modelDaily} maxDailyTokens={maxDailyTokens} models={models} modelTotal={modelTotal} locale={props.locale} t={props.t} />
               )}
 
               <p className="usage-note">{props.t("usage_data_note")}</p>
@@ -162,39 +163,108 @@ function OverviewPanel(props: {
 
 function ModelsPanel(props: {
   daily: DailyTokenUsage[];
+  modelDaily: ModelDailyTokenUsage[];
   maxDailyTokens: number;
-  models: Array<{ model: string; totalTokens: number; sessionCount: number; messageCount: number }>;
+  models: ModelTokenUsage[];
   modelTotal: number;
   locale: Locale;
   t: TFunction;
 }) {
+  const [modelsExpanded, setModelsExpanded] = useState(false);
+  const barsRef = useRef<HTMLDivElement | null>(null);
+  const chartModels = props.models.slice(0, 8).map((item) => item.model);
+  const colors = new Map(props.models.map((item, index) => [item.model, `shade-${index % 8}`]));
+  const byDay = new Map<string, ModelDailyTokenUsage[]>();
+  for (const item of props.modelDaily) {
+    if (!chartModels.includes(item.model)) continue;
+    byDay.set(item.date, [...(byDay.get(item.date) ?? []), item]);
+  }
+  const collapsedModelCount = 3;
+  const hasMoreModels = props.models.length > collapsedModelCount;
+  const visibleModels = modelsExpanded ? props.models : props.models.slice(0, collapsedModelCount);
+
+  useEffect(() => {
+    const bars = barsRef.current;
+    if (!bars) return;
+    bars.scrollLeft = bars.scrollWidth;
+  }, [props.daily.length, props.daily[props.daily.length - 1]?.date, props.maxDailyTokens]);
+
+  function handleBarsWheel(event: WheelEvent<HTMLDivElement>) {
+    const bars = barsRef.current;
+    if (!bars || bars.scrollWidth <= bars.clientWidth) return;
+
+    const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+    if (delta === 0) return;
+    event.preventDefault();
+    bars.scrollLeft += delta;
+  }
+
   return (
     <div className="usage-models-panel">
-      <div className="usage-bars" aria-label={props.t("usage_daily")}>
-        {props.daily.map((item) => {
-          const height = props.maxDailyTokens === 0 ? 4 : Math.max(4, Math.round((item.totalTokens / props.maxDailyTokens) * 154));
+      <div ref={barsRef} className="usage-bars" aria-label={props.t("usage_daily")} onWheel={handleBarsWheel}>
+        {props.daily.map((item, index) => {
+          const segments = (byDay.get(item.date) ?? []).sort((left, right) => right.totalTokens - left.totalTokens);
+          const height = props.maxDailyTokens === 0 ? 4 : Math.max(4, Math.round((item.totalTokens / props.maxDailyTokens) * 124));
+          const placement = tooltipPlacement(index, props.daily.length);
+          const verticalPlacement = height < 62 ? "low" : "middle";
           return (
-            <div key={item.date} className="usage-bar-wrap" title={`${item.date} · ${number(item.totalTokens)} tokens`}>
+            <div key={item.date} className={`usage-bar-wrap tooltip-${placement} tooltip-${verticalPlacement}`}>
               <div className="usage-bar-value">{formatTokenCount(item.totalTokens)}</div>
-              <div className="usage-bar" style={{ height }} />
+              <div className="usage-bar stacked" style={{ height }}>
+                {segments.map((segment) => (
+                  <span
+                    key={segment.model}
+                    className={`usage-bar-segment ${colors.get(segment.model) ?? "shade-0"}`}
+                    style={{ height: `${Math.max(2, (segment.totalTokens / Math.max(item.totalTokens, 1)) * 100)}%` }}
+                  />
+                ))}
+                <UsageTooltip date={item.date} items={segments} sessions={item.sessionCount} />
+              </div>
               <div className="usage-bar-label">{shortDate(item.date, props.locale)}</div>
             </div>
           );
         })}
       </div>
-      <div className="usage-model-list">
-        {props.models.slice(0, 8).map((item, index) => {
+      <div className={`usage-model-list usage-model-breakdown ${modelsExpanded ? "expanded" : ""}`}>
+        {visibleModels.map((item, index) => {
           const share = usageShare(item.totalTokens, props.modelTotal);
           return (
             <div key={item.model} className="usage-model-row">
-              <span className={`usage-model-swatch shade-${index % 5}`} />
+              <span className={`usage-model-swatch ${colors.get(item.model) ?? `shade-${index % 8}`}`} />
               <span className="usage-model-name">{item.model}</span>
-              <span className="usage-model-meta">{formatTokenCount(item.totalTokens)} · {number(item.sessionCount)} {props.t("usage_sessions")}</span>
+              <span className="usage-model-meta">{formatTokenCount(item.inputTokens)} in · {formatTokenCount(item.outputTokens)} out · {number(item.sessionCount)} {props.t("usage_sessions")}</span>
               <b>{percent(share)}</b>
             </div>
           );
         })}
       </div>
+      {hasMoreModels && (
+        <div className="usage-model-more-row">
+          <button type="button" className="usage-model-more" onClick={() => setModelsExpanded((expanded) => !expanded)}>
+            {modelsExpanded ? "less..." : "more..."}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function tooltipPlacement(index: number, total: number): "left" | "right" {
+  return index < total / 2 ? "right" : "left";
+}
+
+function UsageTooltip(props: { date: string; items: ModelDailyTokenUsage[]; sessions: number }) {
+  return (
+    <div className="usage-tooltip">
+      <b>{shortDate(props.date, "en")}</b>
+      {props.items.map((item, index) => (
+        <div key={item.model} className="usage-tooltip-row">
+          <span className={`usage-model-swatch shade-${index % 8}`} />
+          <span>{item.model}</span>
+          <strong>{formatTokenCount(item.totalTokens)}</strong>
+        </div>
+      ))}
+      <small>{number(props.sessions)} sessions</small>
     </div>
   );
 }

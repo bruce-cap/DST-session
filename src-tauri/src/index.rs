@@ -106,12 +106,16 @@ pub fn read_token_usage() -> Result<TokenUsageSummary, String> {
     let by_day = read_usage_by_day(&conn, &session_stats)?;
     let by_model = read_usage_by_model(&conn)?;
     let by_model_by_day = read_usage_by_model_by_day(&conn)?;
+    let input_tokens = by_provider.iter().map(|item| item.input_tokens).sum();
+    let output_tokens = by_provider.iter().map(|item| item.output_tokens).sum();
     let total_tokens = by_provider.iter().map(|item| item.total_tokens).sum();
     let total_sessions = by_provider.iter().map(|item| item.session_count).sum();
     let total_messages = by_provider.iter().map(|item| item.message_count).sum();
 
     Ok(TokenUsageSummary {
         total_tokens,
+        input_tokens,
+        output_tokens,
         total_sessions,
         total_messages,
         by_provider,
@@ -188,6 +192,8 @@ fn read_usage_by_provider(
         .prepare(
             "SELECT
                 source,
+                COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(output_tokens), 0) AS output_tokens,
                 COALESCE(SUM(total_tokens), 0) AS total_tokens,
                 MAX(date) AS latest_activity
             FROM usage_daily_model
@@ -201,20 +207,24 @@ fn read_usage_by_provider(
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?.max(0) as u64,
-                row.get::<_, Option<String>>(2)?,
+                row.get::<_, i64>(2)?.max(0) as u64,
+                row.get::<_, i64>(3)?.max(0) as u64,
+                row.get::<_, Option<String>>(4)?,
             ))
         })
         .map_err(|error| format!("读取 token provider 聚合失败: {error}"))?;
 
     let mut by_source = BTreeMap::<String, ProviderTokenUsage>::new();
     for row in rows {
-        let (source, total_tokens, latest_activity) =
+        let (source, input_tokens, output_tokens, total_tokens, latest_activity) =
             row.map_err(|error| format!("读取 token provider 聚合行失败: {error}"))?;
         let session = session_stats.by_provider.get(&source);
         by_source.insert(
             source.clone(),
             ProviderTokenUsage {
                 source,
+                input_tokens,
+                output_tokens,
                 total_tokens,
                 session_count: session.map(|item| item.session_count).unwrap_or(0),
                 message_count: session.map(|item| item.message_count).unwrap_or(0),
@@ -229,6 +239,8 @@ fn read_usage_by_provider(
     for (source, session) in &session_stats.by_provider {
         by_source.entry(source.clone()).or_insert_with(|| ProviderTokenUsage {
             source: source.clone(),
+            input_tokens: 0,
+            output_tokens: 0,
             total_tokens: 0,
             session_count: session.session_count,
             message_count: session.message_count,
@@ -255,6 +267,8 @@ fn read_usage_by_day(
             "SELECT
                 date,
                 source,
+                COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(output_tokens), 0) AS output_tokens,
                 COALESCE(SUM(total_tokens), 0) AS total_tokens
             FROM usage_daily_model
             GROUP BY date, source
@@ -268,13 +282,15 @@ fn read_usage_by_day(
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, i64>(2)?.max(0) as u64,
+                row.get::<_, i64>(3)?.max(0) as u64,
+                row.get::<_, i64>(4)?.max(0) as u64,
             ))
         })
         .map_err(|error| format!("读取 daily token 聚合失败: {error}"))?;
 
     let mut by_key = BTreeMap::<(String, String), DailyTokenUsage>::new();
     for row in rows {
-        let (date, source, total_tokens) =
+        let (date, source, input_tokens, output_tokens, total_tokens) =
             row.map_err(|error| format!("读取 daily token 聚合行失败: {error}"))?;
         let session = session_stats.by_day.get(&(date.clone(), source.clone()));
         by_key.insert(
@@ -282,6 +298,8 @@ fn read_usage_by_day(
             DailyTokenUsage {
                 date,
                 source,
+                input_tokens,
+                output_tokens,
                 total_tokens,
                 session_count: session.map(|item| item.session_count).unwrap_or(0),
                 message_count: session.map(|item| item.message_count).unwrap_or(0),
@@ -295,6 +313,8 @@ fn read_usage_by_day(
             .or_insert_with(|| DailyTokenUsage {
                 date: date.clone(),
                 source: source.clone(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 0,
                 session_count: session.session_count,
                 message_count: session.message_count,
@@ -310,6 +330,8 @@ fn read_usage_by_model(conn: &Connection) -> Result<Vec<ModelTokenUsage>, String
             "SELECT
                 source,
                 model,
+                COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(output_tokens), 0) AS output_tokens,
                 COALESCE(SUM(total_tokens), 0) AS total_tokens,
                 COALESCE(SUM(session_count), 0) AS session_count,
                 COALESCE(SUM(message_count), 0) AS message_count
@@ -324,9 +346,11 @@ fn read_usage_by_model(conn: &Connection) -> Result<Vec<ModelTokenUsage>, String
             Ok(ModelTokenUsage {
                 source: row.get(0)?,
                 model: row.get(1)?,
-                total_tokens: row.get::<_, i64>(2)?.max(0) as u64,
-                session_count: row.get::<_, i64>(3)?.max(0) as u64,
-                message_count: row.get::<_, i64>(4)?.max(0) as u64,
+                input_tokens: row.get::<_, i64>(2)?.max(0) as u64,
+                output_tokens: row.get::<_, i64>(3)?.max(0) as u64,
+                total_tokens: row.get::<_, i64>(4)?.max(0) as u64,
+                session_count: row.get::<_, i64>(5)?.max(0) as u64,
+                message_count: row.get::<_, i64>(6)?.max(0) as u64,
             })
         })
         .map_err(|error| format!("读取 model token 聚合失败: {error}"))?;
@@ -341,6 +365,8 @@ fn read_usage_by_model_by_day(conn: &Connection) -> Result<Vec<ModelDailyTokenUs
                 date,
                 source,
                 model,
+                COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(output_tokens), 0) AS output_tokens,
                 COALESCE(SUM(total_tokens), 0) AS total_tokens,
                 COALESCE(SUM(session_count), 0) AS session_count,
                 COALESCE(SUM(message_count), 0) AS message_count
@@ -356,9 +382,11 @@ fn read_usage_by_model_by_day(conn: &Connection) -> Result<Vec<ModelDailyTokenUs
                 date: row.get(0)?,
                 source: row.get(1)?,
                 model: row.get(2)?,
-                total_tokens: row.get::<_, i64>(3)?.max(0) as u64,
-                session_count: row.get::<_, i64>(4)?.max(0) as u64,
-                message_count: row.get::<_, i64>(5)?.max(0) as u64,
+                input_tokens: row.get::<_, i64>(3)?.max(0) as u64,
+                output_tokens: row.get::<_, i64>(4)?.max(0) as u64,
+                total_tokens: row.get::<_, i64>(5)?.max(0) as u64,
+                session_count: row.get::<_, i64>(6)?.max(0) as u64,
+                message_count: row.get::<_, i64>(7)?.max(0) as u64,
             })
         })
         .map_err(|error| format!("读取 model daily token 聚合失败: {error}"))?;
@@ -467,12 +495,14 @@ fn replace_usage_daily_model_in_conn(
     for row in rows {
         tx.execute(
             "INSERT INTO usage_daily_model (
-                source, date, model, total_tokens, session_count, message_count
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                source, date, model, input_tokens, output_tokens, total_tokens, session_count, message_count
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 row.source,
                 row.date,
                 row.model,
+                row.input_tokens as i64,
+                row.output_tokens as i64,
                 row.total_tokens as i64,
                 row.session_count as i64,
                 row.message_count as i64,
@@ -541,6 +571,8 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
             source TEXT NOT NULL,
             date TEXT NOT NULL,
             model TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
             total_tokens INTEGER NOT NULL DEFAULT 0,
             session_count INTEGER NOT NULL DEFAULT 0,
             message_count INTEGER NOT NULL DEFAULT 0,
@@ -549,7 +581,32 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
         CREATE INDEX IF NOT EXISTS idx_usage_daily_model_source_date
             ON usage_daily_model(source, date);",
     )
-    .map_err(|error| format!("初始化 session 索引 schema 失败: {error}"))
+    .map_err(|error| format!("初始化 session 索引 schema 失败: {error}"))?;
+    add_column_if_missing(conn, "usage_daily_model", "input_tokens", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column_if_missing(conn, "usage_daily_model", "output_tokens", "INTEGER NOT NULL DEFAULT 0")?;
+    Ok(())
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|error| format!("读取 {table} 表结构失败: {error}"))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| format!("枚举 {table} 表结构失败: {error}"))?;
+    for row in rows {
+        if row.map_err(|error| format!("读取 {table} 字段失败: {error}"))? == column {
+            return Ok(());
+        }
+    }
+    conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"), [])
+        .map_err(|error| format!("添加 {table}.{column} 字段失败: {error}"))?;
+    Ok(())
 }
 
 fn upsert_session(
@@ -888,6 +945,8 @@ mod tests {
                 date: "2026-05-12".to_string(),
                 source: "claude".to_string(),
                 model: "sonnet".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 100,
                 session_count: 2,
                 message_count: 7,
@@ -902,6 +961,8 @@ mod tests {
                 date: "2026-05-13".to_string(),
                 source: "codex".to_string(),
                 model: "gpt".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 50,
                 session_count: 1,
                 message_count: 3,
@@ -956,6 +1017,8 @@ mod tests {
                 date: "2026-05-12".to_string(),
                 source: "claude".to_string(),
                 model: "sonnet".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 100,
                 session_count: 2,
                 message_count: 7,
@@ -969,6 +1032,8 @@ mod tests {
                 date: "2026-05-12".to_string(),
                 source: "codex".to_string(),
                 model: "gpt".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 50,
                 session_count: 1,
                 message_count: 3,
@@ -982,6 +1047,8 @@ mod tests {
                 date: "2026-05-13".to_string(),
                 source: "claude".to_string(),
                 model: "opus".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
                 total_tokens: 200,
                 session_count: 4,
                 message_count: 9,

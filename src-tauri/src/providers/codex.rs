@@ -197,11 +197,13 @@ fn read_codex_threads_for_usage(
             let model = row.get::<_, Option<String>>(1)?.unwrap_or_default();
             let tokens_used = row.get::<_, Option<i64>>(2)?.unwrap_or_default().max(0) as u64;
             let rollout_path = row.get::<_, Option<String>>(5)?.unwrap_or_default();
-            let message_count = if rollout_path.trim().is_empty() {
-                0
+            let rollout_usage = if rollout_path.trim().is_empty() {
+                CodexUsage::default()
             } else {
-                codex_rollout_usage(Path::new(&rollout_path)).message_count
+                codex_rollout_usage(Path::new(&rollout_path))
             };
+            let output_tokens = rollout_usage.output_tokens;
+            let input_tokens = tokens_used.saturating_sub(output_tokens);
             Ok(crate::usage::UsageRecord {
                 source: "codex".to_string(),
                 usage_id: row.get::<_, String>(0)?,
@@ -212,8 +214,10 @@ fn read_codex_threads_for_usage(
                 } else {
                     model
                 },
+                input_tokens,
+                output_tokens,
                 total_tokens: tokens_used,
-                message_count,
+                message_count: rollout_usage.message_count,
             })
         })
         .map_err(|error| format!("枚举 Codex usage threads 失败: {error}"))?;
@@ -292,6 +296,8 @@ fn codex_record_from_row(row: CodexRow) -> SessionRecord {
 #[derive(Default)]
 struct CodexUsage {
     message_count: u64,
+    input_tokens: u64,
+    output_tokens: u64,
     total_tokens: u64,
     model: String,
 }
@@ -338,11 +344,13 @@ fn codex_rollout_usage(path: &Path) -> CodexUsage {
             continue;
         }
 
-        usage.total_tokens += number_at(last_usage, "total_tokens").unwrap_or_else(|| {
-            number_at(last_usage, "input_tokens").unwrap_or(0)
-                + number_at(last_usage, "output_tokens").unwrap_or(0)
-                + number_at(last_usage, "reasoning_output_tokens").unwrap_or(0)
-        });
+        let input_tokens = number_at(last_usage, "input_tokens").unwrap_or(0);
+        let output_tokens = number_at(last_usage, "output_tokens").unwrap_or(0)
+            + number_at(last_usage, "reasoning_output_tokens").unwrap_or(0);
+        usage.input_tokens += input_tokens;
+        usage.output_tokens += output_tokens;
+        usage.total_tokens += number_at(last_usage, "total_tokens")
+            .unwrap_or(input_tokens + output_tokens);
     }
 
     usage.message_count = if event_message_count > 0 {

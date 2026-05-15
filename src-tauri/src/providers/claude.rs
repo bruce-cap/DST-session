@@ -214,8 +214,8 @@ fn parse_usage_file(path: &Path) -> Result<Vec<crate::usage::UsageRecord>, Strin
     let mut created_at: Option<String> = None;
     let mut fallback_at: Option<String> = None;
     let mut message_count = 0_u64;
-    let mut assistant_model_token_totals = BTreeMap::<String, u64>::new();
-    let mut result_model_token_totals = BTreeMap::<String, u64>::new();
+    let mut assistant_model_token_totals = BTreeMap::<String, TokenSplit>::new();
+    let mut result_model_token_totals = BTreeMap::<String, TokenSplit>::new();
 
     for line in content.lines().filter(|line| !line.trim().is_empty()) {
         let Ok(json) = serde_json::from_str::<Value>(line) else {
@@ -235,7 +235,7 @@ fn parse_usage_file(path: &Path) -> Result<Vec<crate::usage::UsageRecord>, Strin
                     add_model_tokens(
                         &mut assistant_model_token_totals,
                         string_at(message, "model").unwrap_or_default(),
-                        claude_usage_tokens(message.get("usage")),
+                        claude_usage_split(message.get("usage")),
                     );
                 }
             }
@@ -263,7 +263,7 @@ fn parse_usage_file(path: &Path) -> Result<Vec<crate::usage::UsageRecord>, Strin
     let multi_model = model_token_totals.len() > 1;
     Ok(model_token_totals
         .into_iter()
-        .map(|(model, total_tokens)| {
+        .map(|(model, tokens)| {
             let path_id = path.to_string_lossy();
             crate::usage::UsageRecord {
                 source: "claude".to_string(),
@@ -275,7 +275,9 @@ fn parse_usage_file(path: &Path) -> Result<Vec<crate::usage::UsageRecord>, Strin
                 created_at: created_at.clone(),
                 fallback_at: fallback_at.clone(),
                 model,
-                total_tokens,
+                input_tokens: tokens.input,
+                output_tokens: tokens.output,
+                total_tokens: tokens.total(),
                 message_count,
             }
         })
@@ -294,7 +296,7 @@ fn parse_session_file(path: &Path) -> Result<Option<SessionRecord>, String> {
     let mut message_count = 0_u64;
     let mut total_tokens = 0_u64;
     let mut model = String::new();
-    let mut model_token_totals = BTreeMap::<String, u64>::new();
+    let mut model_token_totals = BTreeMap::<String, TokenSplit>::new();
     let mut workspace = String::new();
     let mut mode = String::new();
     let mut has_real_activity = false;
@@ -355,8 +357,8 @@ fn parse_session_file(path: &Path) -> Result<Option<SessionRecord>, String> {
                     if model.is_empty() && !message_model.is_empty() {
                         model = message_model.clone();
                     }
-                    let tokens = claude_usage_tokens(message.get("usage"));
-                    total_tokens += tokens;
+                    let tokens = claude_usage_split(message.get("usage"));
+                    total_tokens += tokens.total();
                     add_model_tokens(&mut model_token_totals, message_model, tokens);
                 }
             }
@@ -366,7 +368,7 @@ fn parse_session_file(path: &Path) -> Result<Option<SessionRecord>, String> {
                     if model.is_empty() && !usage_model.is_empty() {
                         model = usage_model.clone();
                     }
-                    total_tokens += tokens;
+                    total_tokens += tokens.total();
                     add_model_tokens(&mut model_token_totals, usage_model, tokens);
                 }
             }
@@ -399,7 +401,7 @@ fn parse_session_file(path: &Path) -> Result<Option<SessionRecord>, String> {
     }
     if let Some((dominant_model, _)) = model_token_totals
         .iter()
-        .max_by(|left, right| left.1.cmp(right.1).then_with(|| right.0.cmp(left.0)))
+        .max_by(|left, right| left.1.total().cmp(&right.1.total()).then_with(|| right.0.cmp(left.0)))
     {
         model = dominant_model.clone();
     }
@@ -487,15 +489,30 @@ fn is_noise_user_text(text: &str) -> bool {
     .any(|prefix| text.starts_with(prefix))
 }
 
-fn claude_usage_tokens(usage: Option<&Value>) -> u64 {
-    let Some(usage) = usage else {
-        return 0;
-    };
-
-    number_at(usage, "input_tokens").unwrap_or(0) + number_at(usage, "output_tokens").unwrap_or(0)
+#[derive(Debug, Clone, Copy, Default)]
+struct TokenSplit {
+    input: u64,
+    output: u64,
 }
 
-fn claude_model_usage_tokens(model_usage: Option<&Value>) -> Vec<(String, u64)> {
+impl TokenSplit {
+    fn total(self) -> u64 {
+        self.input + self.output
+    }
+}
+
+fn claude_usage_split(usage: Option<&Value>) -> TokenSplit {
+    let Some(usage) = usage else {
+        return TokenSplit::default();
+    };
+
+    TokenSplit {
+        input: number_at(usage, "input_tokens").unwrap_or(0),
+        output: number_at(usage, "output_tokens").unwrap_or(0),
+    }
+}
+
+fn claude_model_usage_tokens(model_usage: Option<&Value>) -> Vec<(String, TokenSplit)> {
     let Some(Value::Object(models)) = model_usage else {
         return Vec::new();
     };
@@ -503,18 +520,22 @@ fn claude_model_usage_tokens(model_usage: Option<&Value>) -> Vec<(String, u64)> 
     models
         .iter()
         .filter_map(|(model, usage)| {
-            let tokens = number_at(usage, "inputTokens").unwrap_or(0)
-                + number_at(usage, "outputTokens").unwrap_or(0);
-            (tokens > 0).then(|| (model.clone(), tokens))
+            let tokens = TokenSplit {
+                input: number_at(usage, "inputTokens").unwrap_or(0),
+                output: number_at(usage, "outputTokens").unwrap_or(0),
+            };
+            (tokens.total() > 0).then(|| (model.clone(), tokens))
         })
         .collect()
 }
 
-fn add_model_tokens(model_totals: &mut BTreeMap<String, u64>, model: String, tokens: u64) {
-    if model.is_empty() || tokens == 0 {
+fn add_model_tokens(model_totals: &mut BTreeMap<String, TokenSplit>, model: String, tokens: TokenSplit) {
+    if model.is_empty() || tokens.total() == 0 {
         return;
     }
-    *model_totals.entry(model).or_default() += tokens;
+    let entry = model_totals.entry(model).or_default();
+    entry.input += tokens.input;
+    entry.output += tokens.output;
 }
 
 pub fn decode_claude_project_dir(name: &str) -> String {
@@ -558,7 +579,7 @@ mod tests {
             "cache_creation_input_tokens": 500
         });
 
-        assert_eq!(claude_usage_tokens(Some(&usage)), 120);
+        assert_eq!(claude_usage_split(Some(&usage)).total(), 120);
     }
 
     #[test]
