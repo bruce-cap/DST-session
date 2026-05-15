@@ -108,14 +108,20 @@ fn list_sessions(db_path: PathBuf) -> Result<Vec<SessionRecord>, String> {
     )
     .map_err(|error| format!("打开 Codex 数据库失败 {}: {error}", db_path.display()))?;
 
+    let subagent_filter = if table_has_column(&conn, "threads", "thread_source")? {
+        " AND COALESCE(thread_source, '') != 'subagent'"
+    } else {
+        ""
+    };
+    let query = format!(
+        "SELECT id, title, first_user_message, cwd, \
+                updated_at_ms, created_at_ms, rollout_path, model, tokens_used \
+         FROM threads \
+         WHERE archived = 0{subagent_filter} \
+         ORDER BY updated_at_ms DESC"
+    );
     let mut stmt = conn
-        .prepare(
-            "SELECT id, title, first_user_message, cwd, \
-                    updated_at_ms, created_at_ms, rollout_path, model, tokens_used \
-             FROM threads \
-             WHERE archived = 0 \
-             ORDER BY updated_at_ms DESC",
-        )
+        .prepare(&query)
         .map_err(|error| format!("查询 Codex threads 失败: {error}"))?;
 
     let rows = stmt
@@ -226,6 +232,25 @@ fn collect_usage_rows(
         records.push(row.map_err(|error| format!("读取 Codex usage row 失败: {error}"))?);
     }
     Ok(records)
+}
+
+fn table_has_column(
+    conn: &rusqlite::Connection,
+    table: &str,
+    column: &str,
+) -> Result<bool, String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|error| format!("读取 Codex {table} 表结构失败: {error}"))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| format!("枚举 Codex {table} 表结构失败: {error}"))?;
+    for row in rows {
+        if row.map_err(|error| format!("读取 Codex {table} 字段失败: {error}"))? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn codex_record_from_row(row: CodexRow) -> SessionRecord {
@@ -441,6 +466,52 @@ mod tests {
         fs::remove_dir(&dir).ok();
 
         assert_eq!(record.total_tokens, 42);
+    }
+
+    #[test]
+    fn list_sessions_excludes_subagent_threads_when_thread_source_exists() {
+        let dir = std::env::temp_dir().join(format!(
+            "dst-session-codex-subagent-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("state_5.sqlite");
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE threads (
+                    id TEXT NOT NULL,
+                    title TEXT,
+                    first_user_message TEXT,
+                    cwd TEXT,
+                    updated_at_ms INTEGER,
+                    created_at_ms INTEGER,
+                    rollout_path TEXT,
+                    model TEXT,
+                    tokens_used INTEGER,
+                    archived INTEGER NOT NULL DEFAULT 0,
+                    thread_source TEXT
+                );
+                INSERT INTO threads (
+                    id, title, first_user_message, cwd, updated_at_ms, created_at_ms,
+                    rollout_path, model, tokens_used, archived, thread_source
+                ) VALUES
+                    ('main-thread', 'Main thread', 'hello', 'C:\\repo', 1000, 0, '', 'gpt-5', 123, 0, NULL),
+                    ('user-thread', 'User thread', 'hello', 'C:\\repo', 2000, 0, '', 'gpt-5', 456, 0, 'user'),
+                    ('subagent-thread', 'Subagent thread', 'worker', 'C:\\repo', 3000, 0, '', 'gpt-5', 789, 0, 'subagent');",
+            )
+            .unwrap();
+        }
+
+        let records = list_sessions(db_path.clone()).unwrap();
+
+        fs::remove_file(&db_path).ok();
+        fs::remove_dir(&dir).ok();
+
+        assert_eq!(records.len(), 2);
+        assert!(records.iter().any(|record| record.id == "main-thread"));
+        assert!(records.iter().any(|record| record.id == "user-thread"));
+        assert!(!records.iter().any(|record| record.id == "subagent-thread"));
     }
 
     #[test]
