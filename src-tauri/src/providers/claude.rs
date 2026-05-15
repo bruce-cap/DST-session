@@ -286,7 +286,8 @@ fn parse_session_file(path: &Path) -> Result<Option<SessionRecord>, String> {
     let content = fs::read_to_string(path)
         .map_err(|error| format!("读取 Claude session 文件失败 {}: {error}", path.display()))?;
     let mut id = file_stem(path);
-    let mut title = String::new();
+    let mut custom_title: Option<String> = None;
+    let mut ai_title: Option<String> = None;
     let mut preview = String::new();
     let mut created_at: Option<String> = None;
     let mut updated_at: Option<String> = None;
@@ -322,16 +323,27 @@ fn parse_session_file(path: &Path) -> Result<Option<SessionRecord>, String> {
         }
 
         match string_at(&json, "type").as_deref() {
+            Some("custom-title") => {
+                if let Some(title) = string_at(&json, "customTitle").and_then(non_empty_compact) {
+                    custom_title = Some(title);
+                }
+            }
+            Some("ai-title") => {
+                if let Some(title) = string_at(&json, "aiTitle").and_then(non_empty_compact) {
+                    ai_title = Some(title);
+                }
+            }
             Some("user") => {
                 has_real_activity = true;
                 message_count += 1;
-                let text = claude_message_text(json.get("message"));
-                if !text.is_empty() {
-                    if preview.is_empty() {
-                        preview = text.clone();
-                    }
-                    if title.is_empty() {
-                        title = text;
+                if !json
+                    .get("isCompactSummary")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    let text = clean_claude_user_text(&claude_message_text(json.get("message")));
+                    if !is_noise_user_text(&text) && preview.is_empty() {
+                        preview = text;
                     }
                 }
             }
@@ -366,9 +378,10 @@ fn parse_session_file(path: &Path) -> Result<Option<SessionRecord>, String> {
         return Ok(None);
     }
 
-    if title.is_empty() {
-        title = "(untitled)".to_string();
-    }
+    let title = custom_title
+        .or(ai_title)
+        .or_else(|| non_empty_compact(preview.clone()))
+        .unwrap_or_else(|| "(untitled)".to_string());
     if updated_at.is_none() {
         updated_at = fs::metadata(path)
             .ok()
@@ -414,6 +427,64 @@ fn claude_message_text(message: Option<&Value>) -> String {
         return String::new();
     };
     content_to_text(message.get("content"))
+}
+
+fn non_empty_compact(value: String) -> Option<String> {
+    let value = crate::json_util::compact(&value);
+    (!value.is_empty()).then_some(value)
+}
+
+fn clean_claude_user_text(text: &str) -> String {
+    let mut text = text.to_string();
+    for tag in [
+        "system-reminder",
+        "ide_opened_file",
+        "local-command-caveat",
+        "local-command-stdout",
+        "command-name",
+        "command-message",
+        "command-args",
+    ] {
+        text = strip_tagged_blocks(&text, tag);
+    }
+    crate::json_util::compact(&text)
+}
+
+fn strip_tagged_blocks(text: &str, tag: &str) -> String {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let mut remaining = text;
+    let mut output = String::new();
+
+    while let Some(start) = remaining.find(&open) {
+        output.push_str(&remaining[..start]);
+        let after_open = &remaining[start + open.len()..];
+        let Some(end) = after_open.find(&close) else {
+            remaining = "";
+            break;
+        };
+        remaining = &after_open[end + close.len()..];
+    }
+
+    output.push_str(remaining);
+    output
+}
+
+fn is_noise_user_text(text: &str) -> bool {
+    if text.is_empty() {
+        return true;
+    }
+    if text.starts_with('/') && text.split_whitespace().count() == 1 {
+        return true;
+    }
+    [
+        "Base directory for this skill:",
+        "Launching skill:",
+        "Tool loaded.",
+        "Todos have been modified successfully.",
+    ]
+    .iter()
+    .any(|prefix| text.starts_with(prefix))
 }
 
 fn claude_usage_tokens(usage: Option<&Value>) -> u64 {
@@ -764,6 +835,185 @@ mod tests {
         assert_eq!(record.message_count, 2);
         assert_eq!(record.total_tokens, 165);
         assert_eq!(record.model, "claude-opus-4-6");
+    }
+
+
+    #[test]
+    fn parse_session_file_prefers_custom_title_then_ai_title() {
+        let dir = std::env::temp_dir().join(format!(
+            "dst-session-claude-title-priority-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        let lines = [
+            json!({
+                "type": "user",
+                "sessionId": "session-title-priority",
+                "timestamp": "2026-05-12T10:00:00.000Z",
+                "message": { "content": "真实用户问题" }
+            })
+            .to_string(),
+            json!({
+                "type": "ai-title",
+                "sessionId": "session-title-priority",
+                "aiTitle": "AI generated title"
+            })
+            .to_string(),
+            json!({
+                "type": "custom-title",
+                "sessionId": "session-title-priority",
+                "customTitle": "User renamed title"
+            })
+            .to_string(),
+        ];
+        fs::write(&path, lines.join("\n")).unwrap();
+
+        let record = parse_session_file(&path)
+            .unwrap()
+            .expect("valid session record");
+
+        fs::remove_file(&path).ok();
+        fs::remove_dir(&dir).ok();
+
+        assert_eq!(record.title, "User renamed title");
+        assert_eq!(record.preview, "真实用户问题");
+    }
+
+    #[test]
+    fn parse_session_file_uses_latest_ai_title_without_custom_title() {
+        let dir = std::env::temp_dir().join(format!(
+            "dst-session-claude-ai-title-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        let lines = [
+            json!({
+                "type": "ai-title",
+                "sessionId": "session-ai-title",
+                "aiTitle": "Old title"
+            })
+            .to_string(),
+            json!({
+                "type": "user",
+                "sessionId": "session-ai-title",
+                "timestamp": "2026-05-12T10:00:00.000Z",
+                "message": { "content": "真实用户问题" }
+            })
+            .to_string(),
+            json!({
+                "type": "ai-title",
+                "sessionId": "session-ai-title",
+                "aiTitle": "New title"
+            })
+            .to_string(),
+        ];
+        fs::write(&path, lines.join("\n")).unwrap();
+
+        let record = parse_session_file(&path)
+            .unwrap()
+            .expect("valid session record");
+
+        fs::remove_file(&path).ok();
+        fs::remove_dir(&dir).ok();
+
+        assert_eq!(record.title, "New title");
+        assert_eq!(record.preview, "真实用户问题");
+    }
+
+    #[test]
+    fn parse_session_file_cleans_context_tags_for_preview_fallback_title() {
+        let dir = std::env::temp_dir().join(format!(
+            "dst-session-claude-title-clean-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        let lines = [
+            json!({
+                "type": "user",
+                "sessionId": "session-clean-title",
+                "timestamp": "2026-05-12T10:00:00.000Z",
+                "message": {
+                    "content": "<ide_opened_file>The user opened a file.</ide_opened_file> 写一版中文 CLAUDE.md"
+                }
+            })
+            .to_string(),
+            json!({
+                "type": "assistant",
+                "timestamp": "2026-05-12T10:01:00.000Z",
+                "message": {
+                    "model": "claude-opus-4-6",
+                    "usage": { "input_tokens": 10, "output_tokens": 2 }
+                }
+            })
+            .to_string(),
+        ];
+        fs::write(&path, lines.join("\n")).unwrap();
+
+        let record = parse_session_file(&path)
+            .unwrap()
+            .expect("valid session record");
+
+        fs::remove_file(&path).ok();
+        fs::remove_dir(&dir).ok();
+
+        assert_eq!(record.title, "写一版中文 CLAUDE.md");
+        assert_eq!(record.preview, "写一版中文 CLAUDE.md");
+    }
+
+    #[test]
+    fn parse_session_file_skips_noisy_user_text_for_title_and_preview() {
+        let dir = std::env::temp_dir().join(format!(
+            "dst-session-claude-title-noise-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        let lines = [
+            json!({
+                "type": "user",
+                "sessionId": "session-noise-title",
+                "timestamp": "2026-05-12T10:00:00.000Z",
+                "message": { "content": "<local-command-caveat>ignore this</local-command-caveat>" }
+            })
+            .to_string(),
+            json!({
+                "type": "user",
+                "sessionId": "session-noise-title",
+                "timestamp": "2026-05-12T10:00:01.000Z",
+                "message": { "content": "/plugin" }
+            })
+            .to_string(),
+            json!({
+                "type": "user",
+                "sessionId": "session-noise-title",
+                "timestamp": "2026-05-12T10:00:02.000Z",
+                "isCompactSummary": true,
+                "message": { "content": "This session is being continued from a previous conversation." }
+            })
+            .to_string(),
+            json!({
+                "type": "user",
+                "sessionId": "session-noise-title",
+                "timestamp": "2026-05-12T10:00:03.000Z",
+                "message": { "content": "帮我实现标题读取" }
+            })
+            .to_string(),
+        ];
+        fs::write(&path, lines.join("\n")).unwrap();
+
+        let record = parse_session_file(&path)
+            .unwrap()
+            .expect("valid session record");
+
+        fs::remove_file(&path).ok();
+        fs::remove_dir(&dir).ok();
+
+        assert_eq!(record.title, "帮我实现标题读取");
+        assert_eq!(record.preview, "帮我实现标题读取");
+        assert_eq!(record.message_count, 4);
     }
 
     #[test]

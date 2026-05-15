@@ -1,6 +1,6 @@
 [package]
 name = "agent-session-manager"
-version = "0.3.2"
+version = "0.3.4"
 description = "Local GUI for managing AI CLI and agent sessions"
 authors = ["Cap"]
 edition = "2021"
