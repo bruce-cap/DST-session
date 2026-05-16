@@ -23,7 +23,7 @@ export function CommandTerminal({ command, t, onCopy }: { command: string; t: TF
           <span>{copied ? t("copy_done") : t("copy_now")}</span>
         </button>
       </div>
-      <pre className="terminal-body"><span className="prompt">$</span><code>{command}</code><span className="caret" /></pre>
+      <pre className="terminal-body"><span className="prompt">$</span><code>{command}</code></pre>
     </section>
   );
 }

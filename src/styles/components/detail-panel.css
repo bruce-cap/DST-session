@@ -438,21 +438,6 @@
   letter-spacing: -0.01em;
 }
 
-.terminal-body .caret {
-  display: inline-block;
-  width: 7px;
-  height: 14px;
-  background: var(--terminal-ink);
-  animation: blink 1.1s steps(2, start) infinite;
-  vertical-align: text-bottom;
-  flex: 0 0 auto;
-  margin-top: 2px;
-}
-
-@keyframes blink {
-  to { visibility: hidden; }
-}
-
 /* Detail section — metadata */
 .detail-section {
   padding: 22px 0 0;
